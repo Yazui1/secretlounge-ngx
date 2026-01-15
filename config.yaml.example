@@ -18,6 +18,41 @@ allow_documents: true
 # allow mods to remove message without issuing a cooldown
 allow_remove_command: false
 
+# number of users required to vote /remove before a message is deleted
+# set to 0 to disable user-initiated removes
+user_remove_threshold: 3
+
+# cooldown duration (in hours) for user-voted removals
+# this is a fixed cooldown that doesn't follow the progressive warning system
+# defaults to 24 hours if not specified
+user_remove_cooldown_hours: 24
+
+# cooldown interval (in seconds) between /remove command uses
+# prevents abuse by limiting how often a user can vote to remove messages
+# defaults to 600 seconds (10 minutes) if not specified, set to 0 to disable
+user_remove_interval: 600
+
+# number of /remove votes allowed before the cooldown interval applies
+# allows users to vote on multiple messages before rate limiting kicks in
+# defaults to 3 if not specified
+user_remove_limit_count: 3
+
+# global limit: maximum number of successful removals per day across all users
+# prevents raid abuse where many users coordinate to remove content
+# set to 0 to disable global limit, defaults to 5
+user_remove_global_limit: 5
+# time window for the global limit in hours, defaults to 24 (one day)
+user_remove_global_window: 24
+
+# when a message is removed via user votes, also remove neighboring messages
+# from the same user to handle rapid-fire spam or abuse
+# set to 0 to only remove the single reported message, defaults to 1
+user_remove_consecutive_count: 3
+# whether to remove consecutive messages (true) or just the reported message (false)
+# when true, removes up to user_remove_consecutive_count messages before and after
+# the reported message from the same user, defaults to true
+user_remove_consecutive: true
+
 # enable upvoting by reacting with thumbs-up to a message
 message_reaction_upvote: true
 
@@ -26,6 +61,13 @@ enable_signing: false
 # limit usage of /sign to once in every interval (seconds)
 # defaults to 600 if not specified, set to 0 to disable
 #sign_limit_interval: 600
+
+# custom message filter
+# specify a Python file containing a filter function to control which messages are forwarded
+# the file should define a function named 'message_filter' that takes (user, is_media, signed, tripcode)
+# and returns True to allow or False to block the message
+# see message_filter_example.py for examples
+message_filter: "./message_filter.py"
 
 # point of contact shown to blacklisted users (optional)
 #blacklist_contact: http://t.me/invite/something

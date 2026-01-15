@@ -40,6 +40,7 @@ sign - Sign a message with your username
 s - Alias of sign
 tsign - Sign a message with your tripcode
 t - Alias of tsign
+remove - Vote to remove a message collectively (reply to a message to remove)
 motd - Show the welcome message
 privacy - Show privacy policy
 version - Get version & source code of this bot
@@ -49,6 +50,58 @@ toggledebug - Toggle debug mode (sends back all messages to you)
 togglekarma - Toggle karma notifications
 tripcode - Show or set the tripcode for your messages
 ```
+
+## Custom Message Filtering
+
+You can implement custom filters to control which messages are forwarded to the chat. This is useful for:
+- Blocking spam or abusive content
+- Requiring minimum karma/trust before allowing certain message types
+- Time-based restrictions
+- Rate limiting
+- Any custom logic you can implement in Python
+
+### Setup
+
+1. **Create a filter file** (or copy the template):
+   ```bash
+   cp message_filter.py my_filter.py
+   ```
+
+2. **Edit your filter logic**:
+   ```python
+   def message_filter(user, is_media=False, signed=False, tripcode=False):
+       # Block users with very low karma
+       if user.karma < -20:
+           return False
+       
+       # Block media from users with warnings
+       if is_media and user.warnings > 2:
+           return False
+       
+       # Allow all other messages
+       return True
+   ```
+
+3. **Enable in config.yaml**:
+   ```yaml
+   message_filter: "./my_filter.py"
+   ```
+
+4. **Restart the bot** - The filter is loaded automatically on startup
+
+### Available User Properties
+
+Your filter function receives a `user` object with these properties:
+- `user.id` - Telegram user ID
+- `user.username` - Username
+- `user.karma` - Karma score
+- `user.warnings` - Number of warnings
+- `user.rank` - User rank (0=regular, 10=mod, 100=admin)
+- `user.joined` - DateTime when user joined
+- `user.isInCooldown()` - Check if in cooldown
+- `user.isBlacklisted()` - Check if blacklisted
+
+See `message_filter_example.py` for 8+ different example implementations including rate limiting, time-based filters, and more.
 
 ## FAQ
 
