@@ -449,6 +449,59 @@ def get_users(user: User):
 
 
 @requireUser
+@requireRank(RANKS.mod)
+def get_moderated_users(user: User):
+    """Get a list of users in cooldown or blacklisted."""
+    cooldown_users = []
+    blacklisted_users = []
+
+    for user2 in db.iterateUsers():
+        if user2.isBlacklisted():
+            blacklisted_users.append(user2)
+        elif user2.isInCooldown():
+            cooldown_users.append(user2)
+
+    # Build the response text
+    lines = ["<b>Moderated</b>\n"]
+
+    # Cooldown section
+    lines.append("<b>In Cooldown:</b>")
+    if cooldown_users:
+        for u in cooldown_users:
+            oid = u.getObfuscatedId()
+            username = u.username or "(no username)"
+            until = format_datetime(
+                u.cooldownUntil) if u.cooldownUntil else "unknown"
+            warnings = u.warnings
+            lines.append(
+                f"  • <code>{oid}</code> @{username} - until {until} (warnings: {warnings})")
+    else:
+        lines.append("  <i>No users in cooldown</i>")
+
+    lines.append("")  # blank line
+
+    # Blacklisted section
+    lines.append("<b>Blacklisted:</b>")
+    if blacklisted_users:
+        for u in blacklisted_users:
+            oid = u.getObfuscatedId()
+            username = u.username or "(no username)"
+            reason = u.blacklistReason or "(no reason)"
+            left_date = format_datetime(u.left) if u.left else "unknown"
+            lines.append(
+                f"  • <code>{oid}</code> @{username} - since {left_date}")
+            lines.append(f"    Reason: {reason}")
+    else:
+        lines.append("  <i>No blacklisted users</i>")
+
+    lines.append("")
+    lines.append(
+        f"<b>Total:</b> {len(cooldown_users)} in cooldown, {len(blacklisted_users)} blacklisted")
+
+    return rp.Reply(rp.types.MODERATED_LIST, text="\n".join(lines))
+
+
+@requireUser
 def get_system_text(user: User, key: str):
     if key not in ("motd", "privacy"):
         raise ValueError()
@@ -704,6 +757,8 @@ def uncooldown_user(user: User, oid2=None, username2=None):
         user2.removeWarning()
         was_until = user2.cooldownUntil
         user2.cooldownUntil = None
+    # Notify the user their cooldown was removed
+    _push_system_message(rp.Reply(rp.types.COOLDOWN_REMOVED), who=user2)
     logging.info("%s removed cooldown from %s (was until %s)",
                  user, user2, format_datetime(was_until))
     return rp.Reply(rp.types.SUCCESS)
@@ -734,20 +789,37 @@ def blacklist_user(user: User, msid, reason: str):
 
 @requireUser
 @requireRank(RANKS.admin)
-def unblacklist_user(user: User, msid):
-    cm = ch.getMessage(msid)
-    if cm is None or cm.user_id is None:
-        return rp.Reply(rp.types.ERR_NOT_IN_CACHE)
+def unblacklist_user(user: User, oid2=None, username2=None):
+    # Search all users including blacklisted ones (not just joined users)
+    user2 = None
+    if oid2 is not None:
+        for u in db.iterateUsers():
+            if u.getObfuscatedId() == oid2:
+                user2 = u
+                break
+        if user2 is None:
+            return rp.Reply(rp.types.ERR_NO_USER_BY_ID)
+    elif username2 is not None:
+        username2_lower = username2.lstrip("@").lower()
+        for u in db.iterateUsers():
+            if u.username is not None and u.username.lower() == username2_lower:
+                user2 = u
+                break
+        if user2 is None:
+            return rp.Reply(rp.types.ERR_NO_USER)
+    else:
+        raise ValueError()
 
-    user2 = db.getUser(id=cm.user_id)
     if not user2.isBlacklisted():
         return rp.Reply(rp.types.ERR_NOT_BLACKLISTED)
 
-    with db.modifyUser(id=cm.user_id) as user2:
+    with db.modifyUser(id=user2.id) as user2:
         user2.rank = RANKS.user
         user2.blacklistReason = None
         user2.left = None  # Allow them to rejoin
 
+    # Notify the user they were unblacklisted
+    _push_system_message(rp.Reply(rp.types.UNBLACKLISTED), who=user2)
     logging.info("%s was unblacklisted by %s", user2, user)
     return rp.Reply(rp.types.SUCCESS)
 

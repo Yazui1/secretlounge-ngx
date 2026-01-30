@@ -45,6 +45,8 @@ types = NumericEnum([
     "REMOVE_THRESHOLD_REACHED",
     "PROMOTED_MOD",
     "PROMOTED_ADMIN",
+    "COOLDOWN_REMOVED",
+    "UNBLACKLISTED",
     "KARMA_THANK_YOU",
     "KARMA_NOTIFICATION",
     "KARMA_TAKEN",
@@ -82,6 +84,7 @@ types = NumericEnum([
     "USER_INFO_MOD",
     "USERS_INFO",
     "USERS_INFO_EXTENDED",
+    "MODERATED_LIST",
 
     "HELP",
 ])
@@ -117,7 +120,7 @@ format_strs = {
         types.USER_IN_CHAT: em("You're already in the chat."),
         types.USER_NOT_IN_CHAT: em("You're not in the chat yet. Use /start to join!"),
         types.GIVEN_COOLDOWN: lambda deleted, **_:
-        em("You've been handed a cooldown of {duration!d} for this message" +
+        em("You've been warned for this message. A cooldown of {duration!d} has been given" +
            (deleted and " (one or more messages also deleted)" or "")),
         types.MESSAGE_DELETED:
         em("Your message has been deleted. No cooldown has been "
@@ -129,6 +132,8 @@ format_strs = {
         types.REMOVE_THRESHOLD_REACHED: em("Message removal threshold reached. Message will be deleted."),
         types.PROMOTED_MOD: em("You've been promoted to moderator."),
         types.PROMOTED_ADMIN: em("You've been promoted to admin."),
+        types.COOLDOWN_REMOVED: em("Your cooldown has been removed by a moderator. You can chat again!"),
+        types.UNBLACKLISTED: em("You've been removed from the blacklist. Welcome back!"),
         types.KARMA_THANK_YOU: em("You just gave this user some sweet karma, awesome!"),
         types.KARMA_NOTIFICATION:
         em("You've just been given sweet karma! (check /info to see your karma" +
@@ -152,7 +157,7 @@ format_strs = {
         types.ERR_NOT_IN_COOLDOWN: em("This user is not in a cooldown right now."),
         types.ERR_NOT_BLACKLISTED: em("This user is not blacklisted."),
         types.ERR_BLACKLISTED: lambda reason, contact, **_:
-        em("You've been blacklisted" + (reason and " for {reason!x}" or "")) +
+        em("You've been blacklisted. If this is an error, contact a mod or admin" + (reason and " for {reason!x}" or "")) +
         (em("\ncontact:") + " {contact}" if contact else ""),
         types.ERR_ALREADY_UPVOTED: em("You have already upvoted this message."),
         types.ERR_UPVOTE_OWN_MESSAGE: em("You can't upvote your own message."),
@@ -187,6 +192,7 @@ format_strs = {
         types.USERS_INFO_EXTENDED:
         "<b>{active}</b> <i>active</i>, {inactive} <i>inactive and</i> " +
         "{blacklisted} <i>blacklisted users</i> (<i>total</i>: {total})",
+        types.MODERATED_LIST: "{text}",
 
         types.HELP:
         "<b>Available Commands:</b>\n"
@@ -212,19 +218,18 @@ format_strs = {
         "  /sendconfirm - Toggle confirmation prompts for flagged messages\n"
         "  /votebutton - Toggle vote/delete buttons on received messages\n"
         "\n"
-        "<b>Moderation (reply to a message):</b>\n"
+        "<b>Moderation:</b>\n"
         "  /warn - Warn the user (cooldown)\n"
         "  /delete - Delete message and warn user\n"
         "  /modsay - Send official moderator message\n"
-        "\n"
-        "<b>Admin Commands:</b>\n"
-        "  /blacklist [reason] - Blacklist user (reply to message)\n"
-        "  /unblacklist - Remove user from blacklist (reply to message)\n"
+        "  /moderated - List users in cooldown or blacklisted\n"
+        "  /blacklist [reason] - Blacklist user\n"
+        "  /unblacklist - Remove user from blacklist\n"
         "  /uncooldown - Remove cooldown from user\n"
         "  /mod - Promote user to moderator\n"
         "  /admin - Promote user to admin\n"
         "  /adminsay - Send official admin message\n"
-        "  /motd - Set welcome message (HTML)\n"
+        "  /motd - Set welcome message\n"
         "  /purgebanned - Delete all messages from banned users\n",
 }
 

@@ -83,7 +83,7 @@ def init(config: dict, _db, _ch):
     cmds = [
         "start", "stop", "users", "info", "help", "motd", "toggledebug", "togglekarma",
         "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "blacklist", "unblacklist",
-        "s", "tripcode", "t", "purgebanned", "sendconfirm", "votebutton"
+        "s", "tripcode", "t", "purgebanned", "sendconfirm", "votebutton", "moderated"
     ]
     for c in cmds:  # maps /<c> to the function cmd_<c>
         c = c.lower()
@@ -849,16 +849,21 @@ def cmd_blacklist(ev: TMessage, arg):
     return send_answer(ev, core.blacklist_user(c_user, reply_msid, arg), True)
 
 
-def cmd_unblacklist(ev: TMessage):
+@takesArgument()
+def cmd_unblacklist(ev: TMessage, arg):
     c_user = UserContainer(ev.from_user)
-    if ev.reply_to_message is None:
-        return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+    arg = arg.lstrip("@")
 
-    reply_msid = ch.findMapping(
-        ev.from_user.id, ev.reply_to_message.message_id)
-    if reply_msid is None:
-        return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
-    return send_answer(ev, core.unblacklist_user(c_user, reply_msid), True)
+    oid, username = None, None
+    if len(arg) < 5:
+        oid = arg  # usernames can't be this short -> it's an id
+    else:
+        username = arg
+
+    send_answer(ev, core.unblacklist_user(c_user, oid, username), True)
+
+
+cmd_moderated = wrap_core(core.get_moderated_users)
 
 
 def relay(ev: TMessage):
