@@ -42,6 +42,23 @@ user_remove_consecutive_count: int = None
 media_limit_period: Optional[timedelta] = None
 sign_interval: timedelta = None
 
+# Credit system settings
+credits_enabled: bool = False
+credits_starting: float = 100.0
+credits_messages_per_credit: int = 20
+credits_media_per_credit: int = 5
+credits_votes_per_credit: int = 5
+credits_vote_cost: float = 1.0
+credits_deletion_tax_percent: float = 80.0
+credits_daily_tax_percent: float = 0.5
+# Credits threshold where tax ramp begins
+credits_daily_tax_ramp_start: float = 100.0
+# Credits threshold where tax ramp ends (max tax)
+credits_daily_tax_ramp_end: float = 200.0
+credits_daily_tax_ramp_max: float = 2.0  # Maximum tax percentage at ramp end
+credits_negative_timeout_hours: int = 24
+credits_daily_earn_max: float = 20.0  # Maximum credits a user can earn per day
+
 
 class IUserContainer():
     id: int
@@ -54,6 +71,7 @@ class IUserContainer():
 
 def init(config: dict, _db, _ch):
     global db, ch, spam_scores, blacklist_contact, enable_signing, allow_remove_command, user_remove_threshold, user_remove_cooldown_hours, user_remove_interval, user_remove_limit_count, user_remove_global_limit, user_remove_global_window, user_remove_consecutive, user_remove_consecutive_count, media_limit_period, sign_interval
+    global credits_enabled, credits_starting, credits_messages_per_credit, credits_media_per_credit, credits_votes_per_credit, credits_vote_cost, credits_deletion_tax_percent, credits_daily_tax_percent, credits_daily_tax_ramp_start, credits_daily_tax_ramp_end, credits_daily_tax_ramp_max, credits_negative_timeout_hours, credits_daily_earn_max
     db = _db
     ch = _ch
     spam_scores = ScoreKeeper()
@@ -76,6 +94,28 @@ def init(config: dict, _db, _ch):
         media_limit_period = timedelta(hours=int(config["media_limit_period"]))
     sign_interval = timedelta(seconds=int(
         config.get("sign_limit_interval", 600)))
+
+    # Credit system configuration
+    credits_enabled = config.get("credits_enabled", False)
+    credits_starting = float(config.get("credits_starting", 20.0))
+    credits_messages_per_credit = int(
+        config.get("credits_messages_per_credit", 20))
+    credits_media_per_credit = int(config.get("credits_media_per_credit", 5))
+    credits_votes_per_credit = int(config.get("credits_votes_per_credit", 5))
+    credits_vote_cost = float(config.get("credits_vote_cost", 1.0))
+    credits_deletion_tax_percent = float(
+        config.get("credits_deletion_tax_percent", 80.0))
+    credits_daily_tax_percent = float(
+        config.get("credits_daily_tax_percent", 0.5))
+    credits_daily_tax_ramp_start = float(
+        config.get("credits_daily_tax_ramp_start", 50.0))
+    credits_daily_tax_ramp_end = float(
+        config.get("credits_daily_tax_ramp_end", 150.0))
+    credits_daily_tax_ramp_max = float(
+        config.get("credits_daily_tax_ramp_max", 2.0))
+    credits_negative_timeout_hours = int(
+        config.get("credits_negative_timeout_hours", 24))
+    credits_daily_earn_max = float(config.get("credits_daily_earn_max", 20.0))
 
     if config.get("locale"):
         rp.localization = import_module(
@@ -187,6 +227,28 @@ def register_tasks(sched):
                 with db.modifyUser(id=user.id) as user:
                     user.removeWarning()
     sched.register(task, minutes=15)
+
+    # Credit daily tax task
+    def credits_daily_tax_task():
+        if not credits_enabled:
+            return
+        now = datetime.now()
+        for user in db.iterateUsers():
+            if not user.isJoined():
+                continue
+            # Check if 24 hours have passed since last tax
+            last_tax = getattr(user, 'creditsLastTax', None)
+            if last_tax is None:
+                last_tax = user.joined
+            if now >= last_tax + timedelta(hours=24):
+                with db.modifyUser(id=user.id) as user:
+                    # Apply daily tax with progressive ramp
+                    if user.credits > 0:
+                        tax_rate = _calculate_tax_rate(user.credits)
+                        tax = user.credits * (tax_rate / 100.0)
+                        user.credits = max(0, user.credits - tax)
+                    user.creditsLastTax = now
+    sched.register(credits_daily_tax_task, hours=1)  # Check every hour
 
 
 def updateUserFromEvent(user, c_user: IUserContainer):
@@ -372,6 +434,10 @@ def user_join(c_user: IUserContainer):
     if not any(db.iterateUserIds()):
         user.rank = RANKS.admin
 
+    # Set starting credits from config
+    if credits_enabled:
+        user.credits = credits_starting
+
     logging.info("%s joined chat", user)
     db.addUser(user)
     ret = [rp.Reply(rp.types.CHAT_JOIN)]
@@ -399,6 +465,24 @@ def user_leave(user: User):
     return rp.Reply(rp.types.CHAT_LEAVE)
 
 
+def get_help():
+    """Get the help message, dynamically including credit info if enabled."""
+    return rp.Reply(rp.types.HELP,
+                    credits_enabled=credits_enabled,
+                    credits_starting=credits_starting,
+                    credits_messages_per_credit=credits_messages_per_credit,
+                    credits_media_per_credit=credits_media_per_credit,
+                    credits_votes_per_credit=credits_votes_per_credit,
+                    credits_vote_cost=credits_vote_cost,
+                    credits_deletion_tax_percent=credits_deletion_tax_percent,
+                    credits_daily_tax_percent=credits_daily_tax_percent,
+                    credits_daily_tax_ramp_start=credits_daily_tax_ramp_start,
+                    credits_daily_tax_ramp_end=credits_daily_tax_ramp_end,
+                    credits_daily_tax_ramp_max=credits_daily_tax_ramp_max,
+                    credits_daily_earn_max=credits_daily_earn_max,
+                    credits_negative_timeout_hours=credits_negative_timeout_hours)
+
+
 @requireUser
 def get_info(user: User):
     params = {
@@ -410,6 +494,8 @@ def get_info(user: User):
         "warnings": user.warnings,
         "warnExpiry": user.warnExpiry,
         "cooldown": user.cooldownUntil if user.isInCooldown() else None,
+        "credits": getattr(user, 'credits', credits_starting) if credits_enabled else None,
+        "credits_enabled": credits_enabled,
     }
     return rp.Reply(rp.types.USER_INFO, **params)
 
@@ -424,8 +510,10 @@ def get_info_mod(user: User, msid):
     user2 = db.getUser(id=cm.user_id)
     params = {
         "id": user2.getObfuscatedId(),
-        "karma": user2.getObfuscatedKarma(),
+        "karma": user2.karma,
         "cooldown": user2.cooldownUntil if user2.isInCooldown() else None,
+        "credits": getattr(user2, 'credits', credits_starting) if credits_enabled else None,
+        "credits_enabled": credits_enabled,
     }
     return rp.Reply(rp.types.USER_INFO_MOD, **params)
 
@@ -618,6 +706,285 @@ def set_tripcode(user: User, text: str):
     return rp.Reply(rp.types.TRIPCODE_SET, tripname=tripname, tripcode=tripcode)
 
 
+# Credit system functions
+
+@requireUser
+def get_credit_stats(user: User):
+    """Get credit system statistics for monitoring inflation."""
+    if not credits_enabled:
+        return rp.Reply(rp.types.ERR_CREDITS_DISABLED)
+
+    # Gather statistics from all users
+    total_credits = 0.0
+    active_users = 0
+    credits_list = []
+    negative_count = 0
+    low_count = 0  # 0-50
+    medium_count = 0  # 50-100
+    high_count = 0  # 100-200
+    very_high_count = 0  # 200+
+
+    # Track top earners
+    top_global = []  # (credits, user_id, username)
+    top_daily = []   # (earned_today, user_id, username)
+    now = datetime.now()
+
+    for u in db.iterateUsers():
+        if not u.isJoined():
+            continue
+        active_users += 1
+        user_credits = getattr(u, 'credits', credits_starting)
+        total_credits += user_credits
+        credits_list.append(user_credits)
+
+        if user_credits < 0:
+            negative_count += 1
+        elif user_credits < 10:
+            low_count += 1
+        elif user_credits < 50:
+            medium_count += 1
+        elif user_credits < 150:
+            high_count += 1
+        else:
+            very_high_count += 1
+
+        # Track for leaderboards - show tripcode (hashed) if set, otherwise obfuscated ID
+        if u.tripcode:
+            tripname, tripcode = genTripcode(u.tripcode)
+            display_name = f"{tripname} {tripcode}"
+        else:
+            display_name = u.getObfuscatedId()
+        top_global.append((user_credits, u.id, display_name))
+
+        # Daily earnings (only if within 24h)
+        last_reset = getattr(u, 'creditsLastEarnReset', None)
+        earned_today = getattr(u, 'creditsEarnedToday', 0.0)
+        if last_reset and (now - last_reset) < timedelta(hours=24) and earned_today > 0:
+            top_daily.append((earned_today, u.id, display_name))
+
+    if active_users == 0:
+        return rp.Reply(rp.types.CREDITS_STATS, text="<b>Credit Stats:</b> No active users")
+
+    avg_credits = total_credits / active_users
+    min_credits = min(credits_list)
+    max_credits = max(credits_list)
+    median_credits = sorted(credits_list)[len(credits_list) // 2]
+
+    # Calculate expected baseline (all users at starting credits)
+    expected_total = active_users * credits_starting
+    inflation_rate = ((total_credits - expected_total) /
+                      expected_total) * 100 if expected_total > 0 else 0
+
+    # Sort and get top 10
+    top_global.sort(key=lambda x: x[0], reverse=True)
+    top_daily.sort(key=lambda x: x[0], reverse=True)
+
+    lines = [
+        "<b>📊 Credit System Statistics</b>",
+        "",
+        f"<b>Overview:</b>",
+        f"  Active users: {active_users}",
+        f"  Total credits: {total_credits:.1f}",
+        f"  Expected (baseline): {expected_total:.1f}",
+        f"  <b>Inflation rate: {inflation_rate:+.1f}%</b>",
+        "",
+        f"<b>Distribution:</b>",
+        f"  Average: {avg_credits:.1f}",
+        f"  Median: {median_credits:.1f}",
+        f"  Min: {min_credits:.1f}, Max: {max_credits:.1f}",
+        "",
+        f"<b>Brackets:</b>",
+        f"  Negative (&lt;0): {negative_count} ({negative_count/active_users*100:.1f}%)",
+        f"  Low (0-10): {low_count} ({low_count/active_users*100:.1f}%)",
+        f"  Medium (10-50): {medium_count} ({medium_count/active_users*100:.1f}%)",
+        f"  High (50-150): {high_count} ({high_count/active_users*100:.1f}%)",
+        f"  Very High (150+): {very_high_count} ({very_high_count/active_users*100:.1f}%)",
+        "",
+        f"<b>Current Config:</b>",
+        f"  Starting: {credits_starting}",
+        f"  Earn: {credits_messages_per_credit} msgs or {credits_media_per_credit} media = 1 credit",
+        f"  Votes: {credits_votes_per_credit} votes = ±1 credit, voting costs {credits_vote_cost}",
+        f"  Deletion tax: {credits_deletion_tax_percent:.0f}%",
+        f"  Daily tax: {credits_daily_tax_percent:.1f}% → {credits_daily_tax_ramp_max:.1f}% (ramp {credits_daily_tax_ramp_start:.0f}-{credits_daily_tax_ramp_end:.0f})",
+        f"  Daily earn max: {credits_daily_earn_max if credits_daily_earn_max > 0 else 'unlimited'}",
+        "",
+    ]
+
+    # Top 10 Global (by total credits)
+    lines.append("<b>🏆 Top 10 Global (Total Credits):</b>")
+    for i, (creds, uid, display_name) in enumerate(top_global[:10], 1):
+        lines.append(f"  {i}. {display_name}: {creds:.1f}")
+    if not top_global:
+        lines.append("  (no users)")
+    lines.append("")
+
+    # Top 10 Daily (by credits earned today)
+    lines.append("<b>📈 Top 10 Daily (Earned Today):</b>")
+    for i, (earned, uid, display_name) in enumerate(top_daily[:10], 1):
+        lines.append(f"  {i}. {display_name}: +{earned:.1f}")
+    if not top_daily:
+        lines.append("  (no earnings today)")
+    lines.append("")
+
+    lines.extend([
+        "<b>Tuning Tips:</b>",
+        "  • Inflation &gt; 0: ↑ daily tax, ↑ vote cost, ↓ earn rates",
+        "  • Inflation &lt; 0: ↓ daily tax, ↓ vote cost, ↑ earn rates",
+    ])
+
+    return rp.Reply(rp.types.CREDITS_STATS, text="\n".join(lines))
+
+
+@requireUser
+def send_credits(user: User, msid, amount: float):
+    """Send credits to another user by replying to their message."""
+    if not credits_enabled:
+        return rp.Reply(rp.types.ERR_CREDITS_DISABLED)
+
+    if amount <= 0:
+        return rp.Reply(rp.types.ERR_CREDITS_INVALID_AMOUNT)
+
+    cm = ch.getMessage(msid)
+    if cm is None or cm.user_id is None:
+        return rp.Reply(rp.types.ERR_NOT_IN_CACHE)
+
+    if user.id == cm.user_id:
+        return rp.Reply(rp.types.ERR_CREDITS_SELF_SEND)
+
+    current_credits = getattr(user, 'credits', credits_starting)
+    if current_credits < amount:
+        return rp.Reply(rp.types.ERR_CREDITS_INSUFFICIENT, credits=current_credits)
+
+    # Deduct from sender
+    with db.modifyUser(id=user.id) as user:
+        user.credits = getattr(user, 'credits', credits_starting) - amount
+        new_balance = user.credits
+
+    # Add to recipient
+    user2 = db.getUser(id=cm.user_id)
+    with db.modifyUser(id=cm.user_id) as user2:
+        user2.credits = getattr(user2, 'credits', credits_starting) + amount
+        recipient_balance = user2.credits
+
+    # Notify recipient
+    if not user2.hideKarma:
+        _push_system_message(
+            rp.Reply(rp.types.CREDITS_RECEIVED, amount=amount,
+                     credits=recipient_balance),
+            who=user2, reply_to=msid)
+
+    logging.info("%s sent %.1f credits to [%s]",
+                 user, amount, user2.getObfuscatedId())
+    return rp.Reply(rp.types.CREDITS_SENT, amount=amount, credits=new_balance)
+
+
+def _calculate_tax_rate(credits: float) -> float:
+    """Calculate the daily tax rate based on credit amount with linear ramp.
+
+    Below ramp_start: base tax rate
+    Between ramp_start and ramp_end: linearly interpolated
+    Above ramp_end: max tax rate
+    """
+    if credits <= credits_daily_tax_ramp_start:
+        return credits_daily_tax_percent
+    elif credits >= credits_daily_tax_ramp_end:
+        return credits_daily_tax_ramp_max
+    else:
+        # Linear interpolation between start and end
+        ramp_range = credits_daily_tax_ramp_end - credits_daily_tax_ramp_start
+        if ramp_range <= 0:
+            return credits_daily_tax_percent
+        progress = (credits - credits_daily_tax_ramp_start) / ramp_range
+        return credits_daily_tax_percent + progress * (credits_daily_tax_ramp_max - credits_daily_tax_percent)
+
+
+def _check_and_reset_daily_earn(user) -> float:
+    """Check if daily earn should be reset and return current earned today value."""
+    now = datetime.now()
+    last_reset = getattr(user, 'creditsLastEarnReset', None)
+
+    # Reset if never set or if 24 hours have passed
+    if last_reset is None or (now - last_reset) >= timedelta(hours=24):
+        user.creditsEarnedToday = 0.0
+        user.creditsLastEarnReset = now
+
+    return getattr(user, 'creditsEarnedToday', 0.0)
+
+
+def _try_add_credits(user, amount: float) -> float:
+    """Try to add credits respecting daily earn max. Returns amount actually added."""
+    if credits_daily_earn_max <= 0:
+        # No limit
+        user.credits = getattr(user, 'credits', credits_starting) + amount
+        user.creditsEarnedToday = getattr(
+            user, 'creditsEarnedToday', 0.0) + amount
+        return amount
+
+    earned_today = _check_and_reset_daily_earn(user)
+    remaining = credits_daily_earn_max - earned_today
+
+    if remaining <= 0:
+        return 0.0  # Already at daily max
+
+    actual_amount = min(amount, remaining)
+    user.credits = getattr(user, 'credits', credits_starting) + actual_amount
+    user.creditsEarnedToday = earned_today + actual_amount
+    return actual_amount
+
+
+def add_credits_for_message(user_id: int, is_media: bool):
+    """Add credits for sending a message. Called from prepare_user_message."""
+    if not credits_enabled:
+        return
+
+    with db.modifyUser(id=user_id) as user:
+        if is_media:
+            user.creditsMediaCount = getattr(user, 'creditsMediaCount', 0) + 1
+            if user.creditsMediaCount >= credits_media_per_credit:
+                _try_add_credits(user, 1.0)
+                user.creditsMediaCount = 0
+        else:
+            user.creditsMessageCount = getattr(
+                user, 'creditsMessageCount', 0) + 1
+            if user.creditsMessageCount >= credits_messages_per_credit:
+                _try_add_credits(user, 1.0)
+                user.creditsMessageCount = 0
+
+
+def apply_credits_deletion_tax(user_id: int):
+    """Apply the deletion tax when a user's message is deleted."""
+    if not credits_enabled:
+        return
+
+    with db.modifyUser(id=user_id) as user:
+        current_credits = getattr(user, 'credits', credits_starting)
+        tax = current_credits * (credits_deletion_tax_percent / 100.0)
+        user.credits = current_credits - tax
+        logging.info("Applied deletion tax of %.1f to user %s (new balance: %.1f)",
+                     tax, user.getObfuscatedId(), user.credits)
+
+
+def apply_credits_negative_timeout(user_id: int) -> bool:
+    """Check if user has negative credits and apply timeout if so. Returns True if timeout was applied."""
+    if not credits_enabled:
+        return False
+
+    user = db.getUser(id=user_id)
+    if getattr(user, 'credits', credits_starting) < 0:
+        with db.modifyUser(id=user_id) as user:
+            user.cooldownUntil = datetime.now() + timedelta(hours=credits_negative_timeout_hours)
+        # Notify the user
+        _push_system_message(
+            rp.Reply(rp.types.CREDITS_NEGATIVE_TIMEOUT,
+                     duration=timedelta(hours=credits_negative_timeout_hours),
+                     credits=user.credits),
+            who=user)
+        logging.info("User %s got timeout for negative credits (%.1f)",
+                     user.getObfuscatedId(), user.credits)
+        return True
+    return False
+
+
 @requireUser
 @requireRank(RANKS.admin)
 def promote_user(user: User, username2: str, rank: int):
@@ -675,6 +1042,8 @@ def warn_user(user: User, msid, delete=False):
         if not delete:  # allow deleting already warned messages
             return rp.Reply(rp.types.ERR_ALREADY_WARNED)
     if delete:
+        # Apply credit deletion tax
+        apply_credits_deletion_tax(cm.user_id)
         Sender.delete([msid])
     logging.info("%s warned [%s]%s", user, user2.getObfuscatedId(
     ), delete and " (message deleted)" or "")
@@ -692,6 +1061,8 @@ def delete_message(user: User, msid):
         return rp.Reply(rp.types.ERR_NOT_IN_CACHE)
 
     user2 = db.getUser(id=cm.user_id)
+    # Apply credit deletion tax
+    apply_credits_deletion_tax(cm.user_id)
     _push_system_message(rp.Reply(rp.types.MESSAGE_DELETED),
                          who=user2, reply_to=msid)
     Sender.delete([msid])
@@ -862,13 +1233,43 @@ def give_karma(user: User, msid):
         return rp.Reply(rp.types.ERR_ALREADY_UPVOTED)
     elif user.id == cm.user_id:
         return rp.Reply(rp.types.ERR_UPVOTE_OWN_MESSAGE)
+
+    # Credit system: deduct vote cost from voter
+    if credits_enabled:
+        voter_credits = getattr(user, 'credits', credits_starting)
+        if voter_credits < credits_vote_cost:
+            return rp.Reply(rp.types.ERR_CREDITS_INSUFFICIENT, credits=voter_credits)
+        with db.modifyUser(id=user.id) as user:
+            user.credits = getattr(
+                user, 'credits', credits_starting) - credits_vote_cost
+
     cm.addUpvote(user)
     user2 = db.getUser(id=cm.user_id)
-    with db.modifyUser(id=cm.user_id) as user2:
-        user2.karma += KARMA_PLUS_ONE
+
+    # Credit system: count upvotes for recipient
+    recipient_credits = None
+    if credits_enabled:
+        with db.modifyUser(id=cm.user_id) as user2:
+            user2.karma += KARMA_PLUS_ONE
+            # Count upvotes - every X upvotes earns 1 credit (respects daily max)
+            total_upvotes = len(cm.upvoted)
+            if total_upvotes % credits_votes_per_credit == 0:
+                _check_and_reset_daily_earn(user2)
+                _try_add_credits(user2, 1.0)
+            recipient_credits = user2.credits
+    else:
+        with db.modifyUser(id=cm.user_id) as user2:
+            user2.karma += KARMA_PLUS_ONE
+
     if not user2.hideKarma:
-        _push_system_message(
-            rp.Reply(rp.types.KARMA_NOTIFICATION), who=user2, reply_to=msid)
+        if credits_enabled and recipient_credits is not None:
+            _push_system_message(
+                rp.Reply(rp.types.KARMA_NOTIFICATION_WITH_CREDITS,
+                         credits=recipient_credits),
+                who=user2, reply_to=msid)
+        else:
+            _push_system_message(
+                rp.Reply(rp.types.KARMA_NOTIFICATION), who=user2, reply_to=msid)
     return rp.Reply(rp.types.KARMA_THANK_YOU)
 
 
@@ -882,13 +1283,44 @@ def take_karma(user: User, msid):
         return rp.Reply(rp.types.ERR_ALREADY_DOWNVOTED)
     elif user.id == cm.user_id:
         return rp.Reply(rp.types.ERR_DOWNVOTE_OWN_MESSAGE)
+
+    # Credit system: deduct vote cost from voter
+    if credits_enabled:
+        voter_credits = getattr(user, 'credits', credits_starting)
+        if voter_credits < credits_vote_cost:
+            return rp.Reply(rp.types.ERR_CREDITS_INSUFFICIENT, credits=voter_credits)
+        with db.modifyUser(id=user.id) as user:
+            user.credits = getattr(
+                user, 'credits', credits_starting) - credits_vote_cost
+
     cm.addDownvote(user)
     user2 = db.getUser(id=cm.user_id)
-    with db.modifyUser(id=cm.user_id) as user2:
-        user2.karma -= KARMA_PLUS_ONE
+
+    # Credit system: count downvotes for recipient (lose credits)
+    recipient_credits = None
+    if credits_enabled:
+        with db.modifyUser(id=cm.user_id) as user2:
+            user2.karma -= KARMA_PLUS_ONE
+            # Count downvotes - every X downvotes loses 1 credit
+            total_downvotes = len(cm.downvoted)
+            if total_downvotes % credits_votes_per_credit == 0:
+                user2.credits = getattr(user2, 'credits', credits_starting) - 1
+            recipient_credits = user2.credits
+        # Check if user went negative - apply timeout
+        apply_credits_negative_timeout(cm.user_id)
+    else:
+        with db.modifyUser(id=cm.user_id) as user2:
+            user2.karma -= KARMA_PLUS_ONE
+
     if not user2.hideKarma:
-        _push_system_message(
-            rp.Reply(rp.types.KARMA_NEGATIVE_NOTIFICATION), who=user2, reply_to=msid)
+        if credits_enabled and recipient_credits is not None:
+            _push_system_message(
+                rp.Reply(rp.types.KARMA_NEGATIVE_NOTIFICATION_WITH_CREDITS,
+                         credits=recipient_credits),
+                who=user2, reply_to=msid)
+        else:
+            _push_system_message(
+                rp.Reply(rp.types.KARMA_NEGATIVE_NOTIFICATION), who=user2, reply_to=msid)
     return rp.Reply(rp.types.KARMA_TAKEN)
 
 
@@ -963,6 +1395,9 @@ def user_remove_vote(user: User, msid):
             global_remove_timestamps.append(now)
 
         user2 = db.getUser(id=cm.user_id)
+
+        # Apply credit deletion tax for user-voted removal
+        apply_credits_deletion_tax(cm.user_id)
 
         # Add warning and cooldown if not already warned
         if not cm.warned:
@@ -1058,6 +1493,9 @@ def prepare_user_message(user: User, msg_score: int, *, is_media=False, signed=F
         if last_used and (datetime.now() - last_used) < sign_interval:
             return rp.Reply(rp.types.ERR_SPAMMY_SIGN)
         sign_last_used[user.id] = datetime.now()
+
+    # Credit system: earn credits for sending messages
+    add_credits_for_message(user.id, is_media)
 
     return ch.assignMessageId(CachedMessage(user.id))
 

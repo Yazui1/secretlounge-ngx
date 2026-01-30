@@ -82,3 +82,31 @@ message_filter: "./message_filter.py"
 #  bar: barchatbot
 # alternatively the map can also be loaded from another YAML file using this syntax
 #linked_network: "./somewhere/bots.yml"
+
+# Credit system configuration
+# Enable or disable the credit system entirely (defaults to false)
+#credits_enabled: false
+# Starting credits for new users (defaults to 20)
+#credits_starting: 20
+# Messages needed to earn 1 credit (defaults to 20)
+#credits_messages_per_credit: 20
+# Media (images/videos) needed to earn 1 credit (defaults to 5)
+#credits_media_per_credit: 5
+# Number of upvotes/downvotes to earn/lose 1 credit (defaults to 5)
+#credits_votes_per_credit: 5
+# Cost in credits to cast a vote - upvote or downvote (defaults to 1)
+#credits_vote_cost: 1
+# Percentage of credits lost when message is deleted, 0-100 (defaults to 80)
+#credits_deletion_tax_percent: 80
+# Daily tax percentage on credits, 0-100 - base rate below ramp start (defaults to 0.5)
+#credits_daily_tax_percent: 0.5
+# Tax ramp: credits threshold where higher tax begins (defaults to 50)
+#credits_daily_tax_ramp_start: 50
+# Tax ramp: credits threshold where max tax applies (defaults to 150)
+#credits_daily_tax_ramp_end: 150
+# Tax ramp: maximum tax percentage at ramp end (defaults to 2.0)
+#credits_daily_tax_ramp_max: 2.0
+# Maximum credits a user can earn per day, 0 for unlimited (defaults to 20)
+#credits_daily_earn_max: 20.0
+# Duration of timeout when credits go negative, in hours (defaults to 24)
+#credits_negative_timeout_hours: 24

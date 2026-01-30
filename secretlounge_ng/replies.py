@@ -49,10 +49,21 @@ types = NumericEnum([
     "UNBLACKLISTED",
     "KARMA_THANK_YOU",
     "KARMA_NOTIFICATION",
+    "KARMA_NOTIFICATION_WITH_CREDITS",
     "KARMA_TAKEN",
     "KARMA_NEGATIVE_NOTIFICATION",
+    "KARMA_NEGATIVE_NOTIFICATION_WITH_CREDITS",
     "TRIPCODE_INFO",
     "TRIPCODE_SET",
+
+    "CREDITS_SENT",
+    "CREDITS_RECEIVED",
+    "CREDITS_NEGATIVE_TIMEOUT",
+    "CREDITS_STATS",
+    "ERR_CREDITS_DISABLED",
+    "ERR_CREDITS_INSUFFICIENT",
+    "ERR_CREDITS_INVALID_AMOUNT",
+    "ERR_CREDITS_SELF_SEND",
 
     "ERR_COMMAND_DISABLED",
     "ERR_NO_REPLY",
@@ -138,14 +149,31 @@ format_strs = {
         types.KARMA_NOTIFICATION:
         em("You've just been given sweet karma! (check /info to see your karma" +
            " or /toggleKarma to turn these notifications off)"),
+        types.KARMA_NOTIFICATION_WITH_CREDITS:
+        em("You've just been given sweet karma! Your credits: {credits:.1f} " +
+           "(check /info to see your karma or /toggleKarma to turn these notifications off)"),
         types.KARMA_TAKEN: em("You've taken karma from this user."),
         types.KARMA_NEGATIVE_NOTIFICATION:
         em("Someone took karma from you. (check /info to see your karma" +
            " or /toggleKarma to turn these notifications off)"),
+        types.KARMA_NEGATIVE_NOTIFICATION_WITH_CREDITS:
+        em("Someone took karma from you. Your credits: {credits:.1f} " +
+           "(check /info to see your karma or /toggleKarma to turn these notifications off)"),
         types.TRIPCODE_INFO: lambda tripcode, **_:
         "<b>tripcode</b>: " +
         ("<code>{tripcode!x}</code>" if tripcode is not None else "unset"),
         types.TRIPCODE_SET: em("Tripcode set. It will appear as: ") + "<b>{tripname!x}</b> <code>{tripcode!x}</code>",
+
+        types.CREDITS_SENT: em("You sent {amount:.1f} credits to another user. Your balance: {credits:.1f}"),
+        types.CREDITS_RECEIVED: em("You received {amount:.1f} credits! Your balance: {credits:.1f}"),
+        types.CREDITS_NEGATIVE_TIMEOUT:
+        em("Your credit balance went negative! You've been given a cooldown of {duration!d}. " +
+           "Your balance: {credits:.1f}"),
+        types.CREDITS_STATS: "{text}",
+        types.ERR_CREDITS_DISABLED: em("The credit system is not enabled."),
+        types.ERR_CREDITS_INSUFFICIENT: em("You don't have enough credits. Your balance: {credits:.1f}"),
+        types.ERR_CREDITS_INVALID_AMOUNT: em("Invalid credit amount. Please specify a positive number."),
+        types.ERR_CREDITS_SELF_SEND: em("You can't send credits to yourself."),
 
         types.ERR_COMMAND_DISABLED: em("This command has been disabled."),
         types.ERR_NO_REPLY: em("You need to reply to a message to use this command."),
@@ -166,6 +194,7 @@ format_strs = {
         types.ERR_SPAMMY: em("Your message has not been sent. Avoid sending messages too fast, try again later."),
         types.ERR_SPAMMY_SIGN: em("Your message has not been sent. Avoid using /sign too often, try again later."),
         types.ERR_SPAMMY_REMOVE: em("You are using /remove too often. Please wait before voting to remove another message."),
+        types.ERR_GLOBAL_REMOVE_LIMIT: em("Too many messages have been removed recently. Please wait before trying again."),
         types.ERR_SIGN_PRIVACY: em("Your account privacy settings prevent usage of the sign feature. Enable linked forwards first."),
         types.ERR_INVALID_TRIP_FORMAT:
         em("Given tripcode is not valid, the format is ") +
@@ -176,17 +205,19 @@ format_strs = {
         types.ERR_BLOCKED_BY_FILTER: em("Your message has been blocked by the message filter."),
         types.ERR_QUESTION_FILTER: em("Are you sure, this is according to rules (check /motd)?"),
 
-        types.USER_INFO: lambda warnings, cooldown, **_:
+        types.USER_INFO: lambda warnings, cooldown, credits_enabled, credits, **_:
         "<b>id</b>: {id}, <b>username</b>: {username!x}, <b>rank</b>: {rank_i} ({rank})\n" +
-        "<b>karma</b>: {karma}\n" +
+        "<b>karma</b>: {karma}" +
+        (", <b>credits</b>: %.1f" % credits if credits_enabled and credits is not None else "") + "\n" +
         "<b>warnings</b>: {warnings} " + smiley(warnings) +
         (" (one warning will be removed on {warnExpiry!t})" if warnings > 0 else "") + ", " +
         "<b>cooldown</b>: " +
         (cooldown and "yes, until {cooldown!t}" or "no"),
-        types.USER_INFO_MOD: lambda cooldown, **_:
+        types.USER_INFO_MOD: lambda cooldown, credits=None, credits_enabled=False, **_:
         "<b>id</b>: {id}, <b>username</b>: anonymous, <b>rank</b>: n/a, " +
-        "<b>karma bracket</b>: {karma}\n" +
-        "<b>cooldown</b>: " +
+        "<b>karma</b>: {karma}" +
+        (", <b>credits</b>: %.1f" % credits if credits_enabled and credits is not None else "") +
+        "\n<b>cooldown</b>: " +
         (cooldown and "yes, until {cooldown!t}" or "no"),
         types.USERS_INFO: "<b>{count}</b> <i>users</i>",
         types.USERS_INFO_EXTENDED:
@@ -194,7 +225,7 @@ format_strs = {
         "{blacklisted} <i>blacklisted users</i> (<i>total</i>: {total})",
         types.MODERATED_LIST: "{text}",
 
-        types.HELP:
+        types.HELP: lambda credits_enabled=False, credits_starting=20, credits_messages_per_credit=20, credits_media_per_credit=5, credits_votes_per_credit=5, credits_vote_cost=1, credits_deletion_tax_percent=80, credits_daily_tax_percent=0.5, credits_daily_tax_ramp_start=50, credits_daily_tax_ramp_end=150, credits_daily_tax_ramp_max=2.0, credits_daily_earn_max=20.0, credits_negative_timeout_hours=24, **_:
         "<b>Available Commands:</b>\n"
         "\n"
         "<b>Basic Commands:</b>\n"
@@ -210,7 +241,24 @@ format_strs = {
         "  /s - Sign your message with your username\n"
         "  /tripcode - Set your tripcode for pseudo-anonymous identification\n"
         "  /t - Sign your message with your tripcode\n"
-        "  React to a message with 👍, ❤️ or 👎 - Give or take karma from the user\n"
+        "  React to a message with 👍, ❤️ or 👎 - Give or take karma from the user\n" +
+        ("\n"
+         "<b>Credit System:</b> (start with %d credits)\n"
+         "  /creditstats - View credit economy statistics\n"
+         "  /credit X - Send X credits to a user (reply to their message)\n"
+         "  /info - View your current credit balance\n"
+         "  <b>Earning:</b> %d messages = 1 credit, %d media = 1 credit (max %s/day)\n"
+         "  <b>Voting:</b> costs %.1f credits; %d votes received = ±1 credit\n"
+         "  <b>Penalties:</b> message deleted = -%d%% credits\n"
+         "  <b>Daily tax:</b> %.1f%% → %.1f%% (ramp %d-%d credits)\n"
+         "  <b>Warning:</b> negative balance = %dh timeout\n"
+         % (credits_starting, credits_messages_per_credit, credits_media_per_credit,
+            str(credits_daily_earn_max) if credits_daily_earn_max > 0 else "∞",
+            credits_vote_cost, credits_votes_per_credit,
+            int(credits_deletion_tax_percent),
+            credits_daily_tax_percent, credits_daily_tax_ramp_max,
+            int(credits_daily_tax_ramp_start), int(credits_daily_tax_ramp_end),
+            credits_negative_timeout_hours) if credits_enabled else "") +
         "\n"
         "<b>Settings / Toggles:</b>\n"
         "  /toggledebug - Toggle debug messages you receive from the bot\n"
@@ -232,7 +280,7 @@ format_strs = {
         "  /admin - Promote user to admin\n"
         "  /adminsay - Send official admin message\n"
         "  /motd - Set welcome message\n"
-        "  /purgebanned - Delete all messages from banned users\n",
+        "  /purgebanned - Delete all messages from banned users\n"
 }
 
 localization = {}

@@ -25,7 +25,8 @@ USER_PROPS = (
     "id", "username", "realname", "rank", "joined", "left", "lastActive",
     "cooldownUntil", "blacklistReason", "warnings", "warnExpiry", "karma",
     "hideKarma", "debugEnabled", "tripcode", "sendconfirm", "votebutton",
-    "signenabled", "tsignenabled"
+    "signenabled", "tsignenabled", "credits", "creditsMessageCount", "creditsMediaCount",
+    "creditsLastTax", "creditsEarnedToday", "creditsLastEarnReset"
 )
 
 ID_ALPHA = "0123456789abcdefghijklmnopqrstuv"
@@ -54,6 +55,12 @@ class User():
     votebutton: bool
     signenabled: bool
     tsignenabled: bool
+    credits: float
+    creditsMessageCount: int
+    creditsMediaCount: int
+    creditsLastTax: Optional[datetime]
+    creditsEarnedToday: float
+    creditsLastEarnReset: Optional[datetime]
 
     @staticmethod
     def setSalt(salt):
@@ -97,6 +104,14 @@ class User():
         # True = auto-tripcode enabled, False = disabled (default)
         self.tsignenabled = False
 
+        # Credit system
+        self.credits = 20.0  # Starting credits (configurable via config)
+        self.creditsMessageCount = 0  # Counter for messages towards earning credits
+        self.creditsMediaCount = 0  # Counter for media towards earning credits
+        self.creditsLastTax = datetime.now()  # Last time daily tax was applied
+        self.creditsEarnedToday = 0.0  # Credits earned today (for daily cap)
+        self.creditsLastEarnReset = datetime.now()  # Last time daily earn was reset
+
     def isJoined(self):
         return self.left is None
 
@@ -111,12 +126,6 @@ class User():
         value = fnv32a([self.id, salt], [User.global_salt])
         # stringify 20 bits
         return ''.join(ID_ALPHA[n % 32] for n in (value, value >> 5, value >> 10, value >> 15))
-
-    def getObfuscatedKarma(self):
-        for cutoff in (100, 50, 10):
-            if abs(self.karma) >= cutoff:
-                return max(-cutoff, min(self.karma, cutoff))
-        return 0
 
     def getFormattedName(self):
         if self.username is not None:
@@ -282,10 +291,20 @@ class JSONDatabase(Database):
             return None
         props = ["id", "username", "realname", "rank", "blacklistReason",
                  "warnings", "karma", "hideKarma", "debugEnabled"]
-        # sendconfirm and votebutton are optional in older DB dumps; default to True
-        props_d = {"tripcode": None, "sendconfirm": True, "votebutton": True}
+        # sendconfirm, votebutton, and credit fields are optional in older DB dumps
+        props_d = {
+            "tripcode": None,
+            "sendconfirm": True,
+            "votebutton": True,
+            "signenabled": False,
+            "tsignenabled": False,
+            "credits": 100.0,
+            "creditsMessageCount": 0,
+            "creditsMediaCount": 0,
+            "creditsEarnedToday": 0.0,
+        }
         dateprops = ["joined", "left", "lastActive",
-                     "cooldownUntil", "warnExpiry"]
+                     "cooldownUntil", "warnExpiry", "creditsLastTax", "creditsLastEarnReset"]
         assert set(props).union(props_d.keys()).union(
             dateprops) == set(USER_PROPS)
         user = User()
@@ -294,8 +313,11 @@ class JSONDatabase(Database):
         for prop, default in props_d.items():
             setattr(user, prop, d.get(prop, default))
         for prop in dateprops:
-            if d[prop] is not None:
-                setattr(user, prop, datetime.utcfromtimestamp(d[prop]))
+            value = d.get(prop)
+            if value is not None:
+                setattr(user, prop, datetime.utcfromtimestamp(value))
+            else:
+                setattr(user, prop, None)
         return user
 
     def _load(self):
@@ -455,6 +477,26 @@ CREATE TABLE IF NOT EXISTS `users` (
             if not row_exists("users", "tsignenabled"):
                 self.db.execute(
                     "ALTER TABLE `users` ADD `tsignenabled` TINYINT NOT NULL DEFAULT 0")
+
+            # migration for credit system
+            if not row_exists("users", "credits"):
+                self.db.execute(
+                    "ALTER TABLE `users` ADD `credits` REAL NOT NULL DEFAULT 100.0")
+            if not row_exists("users", "creditsMessageCount"):
+                self.db.execute(
+                    "ALTER TABLE `users` ADD `creditsMessageCount` INTEGER NOT NULL DEFAULT 0")
+            if not row_exists("users", "creditsMediaCount"):
+                self.db.execute(
+                    "ALTER TABLE `users` ADD `creditsMediaCount` INTEGER NOT NULL DEFAULT 0")
+            if not row_exists("users", "creditsLastTax"):
+                self.db.execute(
+                    "ALTER TABLE `users` ADD `creditsLastTax` TIMESTAMP")
+            if not row_exists("users", "creditsEarnedToday"):
+                self.db.execute(
+                    "ALTER TABLE `users` ADD `creditsEarnedToday` REAL NOT NULL DEFAULT 0.0")
+            if not row_exists("users", "creditsLastEarnReset"):
+                self.db.execute(
+                    "ALTER TABLE `users` ADD `creditsLastEarnReset` TIMESTAMP")
 
     def getUser(self, *, id=None):
         if id is None:

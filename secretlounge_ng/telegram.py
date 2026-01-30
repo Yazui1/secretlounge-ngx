@@ -84,7 +84,7 @@ def init(config: dict, _db, _ch):
         "start", "stop", "users", "info", "help", "motd", "toggledebug", "togglekarma",
         "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "blacklist", "unblacklist",
         "s", "tripcode", "t", "purgebanned", "sendconfirm", "votebutton", "moderated",
-        "toggles", "togglet"
+        "toggles", "togglet", "credit", "creditstats"
     ]
     for c in cmds:  # maps /<c> to the function cmd_<c>
         c = c.lower()
@@ -712,7 +712,7 @@ def cmd_info(ev):
 
 
 def cmd_help(ev):
-    send_answer(ev, rp.Reply(rp.types.HELP), True)
+    send_answer(ev, core.get_help(), True)
 
 
 @takesArgument(optional=True)
@@ -867,6 +867,31 @@ def cmd_unblacklist(ev: TMessage, arg):
 
 
 cmd_moderated = wrap_core(core.get_moderated_users)
+
+
+# Credit system commands
+cmd_creditstats = wrap_core(core.get_credit_stats)
+
+
+@takesArgument()
+def cmd_credit(ev: TMessage, arg):
+    """Send credits to another user by replying to their message."""
+    c_user = UserContainer(ev.from_user)
+
+    if ev.reply_to_message is None:
+        return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+
+    try:
+        amount = float(arg)
+    except ValueError:
+        return send_answer(ev, rp.Reply(rp.types.ERR_CREDITS_INVALID_AMOUNT), True)
+
+    reply_msid = ch.findMapping(
+        ev.from_user.id, ev.reply_to_message.message_id)
+    if reply_msid is None:
+        return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+
+    return send_answer(ev, core.send_credits(c_user, reply_msid, amount), True)
 
 
 def relay(ev: TMessage):
