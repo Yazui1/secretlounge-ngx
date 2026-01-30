@@ -83,7 +83,8 @@ def init(config: dict, _db, _ch):
     cmds = [
         "start", "stop", "users", "info", "help", "motd", "toggledebug", "togglekarma",
         "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "blacklist", "unblacklist",
-        "s", "tripcode", "t", "purgebanned", "sendconfirm", "votebutton", "moderated"
+        "s", "tripcode", "t", "purgebanned", "sendconfirm", "votebutton", "moderated",
+        "toggles", "togglet"
     ]
     for c in cmds:  # maps /<c> to the function cmd_<c>
         c = c.lower()
@@ -738,6 +739,8 @@ cmd_toggledebug = wrap_core(core.toggle_debug)
 cmd_togglekarma = wrap_core(core.toggle_karma)
 cmd_sendconfirm = wrap_core(core.toggle_sendconfirm)
 cmd_votebutton = wrap_core(core.toggle_votebutton)
+cmd_toggles = wrap_core(core.toggle_signing)
+cmd_togglet = wrap_core(core.toggle_tsigning)
 
 
 @takesArgument()
@@ -893,6 +896,17 @@ def relay(ev: TMessage):
 def relay_inner(ev: TMessage, *, caption_text=None, signed=False, tripcode=False):
     if not is_forward(ev) and ev.content_type == "poll":
         return send_answer(ev, rp.Reply(rp.types.ERR_POLLS_UNSUPPORTED))
+
+    # Apply persistent signing/tripcode settings if not already set
+    if not signed and not tripcode and not is_forward(ev):
+        try:
+            user = db.getUser(id=ev.from_user.id)
+            if getattr(user, 'signenabled', False):
+                signed = True
+            elif getattr(user, 'tsignenabled', False):
+                tripcode = True
+        except KeyError:
+            pass
 
     is_media = is_forward(ev) or ev.content_type in MEDIA_FILTER_TYPES
     msid = core.prepare_user_message(UserContainer(ev.from_user), calc_spam_score(ev),

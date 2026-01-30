@@ -217,6 +217,8 @@ format_strs = {
         "  /togglekarma - Toggle karma notifications\n"
         "  /sendconfirm - Toggle confirmation prompts for flagged messages\n"
         "  /votebutton - Toggle vote/delete buttons on received messages\n"
+        "  /toggles - Toggle auto-signing for all your messages\n"
+        "  /togglet - Toggle auto-tripcode for all your messages\n"
         "\n"
         "<b>Moderation:</b>\n"
         "  /warn - Warn the user (cooldown)\n"

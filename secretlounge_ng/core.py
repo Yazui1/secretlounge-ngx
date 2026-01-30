@@ -567,6 +567,34 @@ def toggle_votebutton(user: User):
 
 
 @requireUser
+def toggle_signing(user: User):
+    """Toggle persistent signing for the user.
+
+    True = all messages are automatically signed (as if using /s).
+    False = messages are not automatically signed (default).
+    """
+    with db.modifyUser(id=user.id) as user:
+        cur = getattr(user, 'signenabled', False)
+        user.signenabled = not cur
+        new = user.signenabled
+    return rp.Reply(rp.types.BOOLEAN_CONFIG, description="Auto-sign messages (/s)", enabled=new)
+
+
+@requireUser
+def toggle_tsigning(user: User):
+    """Toggle persistent tripcode signing for the user.
+
+    True = all messages are automatically tripcoded (as if using /t).
+    False = messages are not automatically tripcoded (default).
+    """
+    with db.modifyUser(id=user.id) as user:
+        cur = getattr(user, 'tsignenabled', False)
+        user.tsignenabled = not cur
+        new = user.tsignenabled
+    return rp.Reply(rp.types.BOOLEAN_CONFIG, description="Auto-tripcode messages (/t)", enabled=new)
+
+
+@requireUser
 def get_tripcode(user: User):
     if not enable_signing:
         return rp.Reply(rp.types.ERR_COMMAND_DISABLED)

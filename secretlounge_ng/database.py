@@ -24,7 +24,8 @@ class SystemConfig():
 USER_PROPS = (
     "id", "username", "realname", "rank", "joined", "left", "lastActive",
     "cooldownUntil", "blacklistReason", "warnings", "warnExpiry", "karma",
-    "hideKarma", "debugEnabled", "tripcode", "sendconfirm", "votebutton"
+    "hideKarma", "debugEnabled", "tripcode", "sendconfirm", "votebutton",
+    "signenabled", "tsignenabled"
 )
 
 ID_ALPHA = "0123456789abcdefghijklmnopqrstuv"
@@ -51,6 +52,8 @@ class User():
     tripcode: Optional[str]
     sendconfirm: bool
     votebutton: bool
+    signenabled: bool
+    tsignenabled: bool
 
     @staticmethod
     def setSalt(salt):
@@ -85,6 +88,14 @@ class User():
         # whether to show vote/delete button on received messages
         # True = recipients see vote button (default), False = hidden
         self.votebutton = True
+
+        # whether to auto-sign all messages (as if using /s)
+        # True = auto-sign enabled, False = disabled (default)
+        self.signenabled = False
+
+        # whether to auto-tripcode all messages (as if using /t)
+        # True = auto-tripcode enabled, False = disabled (default)
+        self.tsignenabled = False
 
     def isJoined(self):
         return self.left is None
@@ -416,6 +427,8 @@ CREATE TABLE IF NOT EXISTS `users` (
 	`tripcode` TEXT,
 	`sendconfirm` TINYINT NOT NULL DEFAULT 1,
 	`votebutton` TINYINT NOT NULL DEFAULT 1,
+	`signenabled` TINYINT NOT NULL DEFAULT 0,
+	`tsignenabled` TINYINT NOT NULL DEFAULT 0,
 	PRIMARY KEY (`id`)
 );
 			""".strip())
@@ -432,6 +445,16 @@ CREATE TABLE IF NOT EXISTS `users` (
             if not row_exists("users", "votebutton"):
                 self.db.execute(
                     "ALTER TABLE `users` ADD `votebutton` TINYINT NOT NULL DEFAULT 1")
+
+            # migration for signenabled flag (defaults to disabled = 0)
+            if not row_exists("users", "signenabled"):
+                self.db.execute(
+                    "ALTER TABLE `users` ADD `signenabled` TINYINT NOT NULL DEFAULT 0")
+
+            # migration for tsignenabled flag (defaults to disabled = 0)
+            if not row_exists("users", "tsignenabled"):
+                self.db.execute(
+                    "ALTER TABLE `users` ADD `tsignenabled` TINYINT NOT NULL DEFAULT 0")
 
     def getUser(self, *, id=None):
         if id is None:
