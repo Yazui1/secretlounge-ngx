@@ -979,7 +979,8 @@ def relay_inner(ev: TMessage, *, caption_text=None, signed=False, tripcode=False
                 # Check spam score
                 ok = core.spam_scores.increaseSpamScore(user.id, msg_score)
                 if not ok:
-                    return send_answer(ev, rp.Reply(rp.types.ERR_SPAMMY), reply_to=True)
+                    wait_seconds = core.spam_scores.getWaitSeconds(user.id)
+                    return send_answer(ev, rp.Reply(rp.types.ERR_SPAMMY, wait_seconds=wait_seconds), reply_to=True)
 
                 # Assign message ID with vote button
                 msid2 = ch.assignMessageId(CachedMessage(
@@ -1378,7 +1379,8 @@ def handle_callback_query(call: telebot.types.CallbackQuery):
             # Check spam score
             ok = core.spam_scores.increaseSpamScore(user.id, msg_score)
             if not ok:
-                return send_answer(ev, rp.Reply(rp.types.ERR_SPAMMY), reply_to=True)
+                wait_seconds = core.spam_scores.getWaitSeconds(user.id)
+                return send_answer(ev, rp.Reply(rp.types.ERR_SPAMMY, wait_seconds=wait_seconds), reply_to=True)
 
             # Assign message ID with vote button if needed
             msid = ch.assignMessageId(CachedMessage(

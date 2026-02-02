@@ -324,6 +324,12 @@ class ScoreKeeper():
         self.scores = {}
 
     def increaseSpamScore(self, uid, n):
+        """Increase spam score for a user.
+
+        Returns:
+            True if message can be sent
+            False if rate limited
+        """
         with self.lock:
             s = self.scores.get(uid, 0)
             if s > SPAM_LIMIT:
@@ -333,6 +339,17 @@ class ScoreKeeper():
                 return s + n <= SPAM_LIMIT_HIT
             self.scores[uid] = s + n
             return True
+
+    def getWaitSeconds(self, uid):
+        """Get the number of seconds until user can send messages again."""
+        with self.lock:
+            s = self.scores.get(uid, 0)
+            if s <= SPAM_LIMIT:
+                return 0
+            # Score decreases by 1 every SPAM_INTERVAL_SECONDS
+            # Need to get from current score to SPAM_LIMIT
+            decreases_needed = s - SPAM_LIMIT
+            return decreases_needed * SPAM_INTERVAL_SECONDS
 
     def scheduledTask(self):
         with self.lock:
@@ -1509,13 +1526,16 @@ def prepare_user_message(user: User, msg_score: int, *, is_media=False, signed=F
 
     ok = spam_scores.increaseSpamScore(user.id, msg_score)
     if not ok:
-        return rp.Reply(rp.types.ERR_SPAMMY)
+        wait_seconds = spam_scores.getWaitSeconds(user.id)
+        return rp.Reply(rp.types.ERR_SPAMMY, wait_seconds=wait_seconds)
 
     # enforce signing cooldown
     if signed and sign_interval.total_seconds() > 1:
         last_used = sign_last_used.get(user.id, None)
         if last_used and (datetime.now() - last_used) < sign_interval:
-            return rp.Reply(rp.types.ERR_SPAMMY_SIGN)
+            remaining = sign_interval - (datetime.now() - last_used)
+            wait_seconds = int(remaining.total_seconds()) + 1
+            return rp.Reply(rp.types.ERR_SPAMMY_SIGN, wait_seconds=wait_seconds)
         sign_last_used[user.id] = datetime.now()
 
     # Credit system: earn credits for sending messages

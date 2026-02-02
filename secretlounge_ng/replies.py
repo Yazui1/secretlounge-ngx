@@ -184,8 +184,14 @@ format_strs = {
         types.ERR_UPVOTE_OWN_MESSAGE: em("You can't upvote your own message."),
         types.ERR_ALREADY_DOWNVOTED: em("You have already downvoted this message."),
         types.ERR_DOWNVOTE_OWN_MESSAGE: em("You can't downvote your own message."),
-        types.ERR_SPAMMY: em("Your message has not been sent. Avoid sending messages too fast, try again later."),
-        types.ERR_SPAMMY_SIGN: em("Your message has not been sent. Avoid using /sign too often, try again later."),
+        types.ERR_SPAMMY: lambda wait_seconds=0, **_:
+        em("Your message has not been sent. Avoid sending messages too fast.") +
+        (" Try again in {wait_seconds} seconds." if wait_seconds >
+         0 else " Try again later."),
+        types.ERR_SPAMMY_SIGN: lambda wait_seconds=0, **_:
+        em("Your message has not been sent. Avoid using /sign too often.") +
+        (" Try again in {wait_seconds} seconds." if wait_seconds >
+         0 else " Try again later."),
         types.ERR_SPAMMY_REMOVE: em("You are using /remove too often. Please wait before voting to remove another message."),
         types.ERR_GLOBAL_REMOVE_LIMIT: em("Too many messages have been removed recently. Please wait before trying again."),
         types.ERR_SIGN_PRIVACY: em("Your account privacy settings prevent usage of the sign feature. Enable linked forwards first."),
