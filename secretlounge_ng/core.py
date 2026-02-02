@@ -909,6 +909,41 @@ def send_credits(user: User, msid, amount: float):
     return rp.Reply(rp.types.CREDITS_SENT, amount=amount, credits=new_balance)
 
 
+@requireUser
+def gamble_credits(user: User, amount: float):
+    """Gamble credits with a 50% chance to double the amount."""
+    import random
+
+    if not credits_enabled:
+        return rp.Reply(rp.types.ERR_CREDITS_DISABLED)
+
+    if amount <= 0:
+        return rp.Reply(rp.types.ERR_CREDITS_INVALID_AMOUNT)
+
+    current_credits = getattr(user, 'credits', credits_starting)
+    if current_credits < amount:
+        return rp.Reply(rp.types.ERR_CREDITS_INSUFFICIENT, credits=current_credits)
+
+    # 50% chance to win
+    won = random.random() < 0.5
+
+    with db.modifyUser(id=user.id) as user:
+        if won:
+            # Win: gain the amount (net double)
+            user.credits = getattr(user, 'credits', credits_starting) + amount
+            new_balance = user.credits
+            logging.info("%s gambled %.1f credits and WON (balance: %.1f)",
+                         user, amount, new_balance)
+            return rp.Reply(rp.types.CREDITS_GAMBLE_WON, winnings=amount, credits=new_balance)
+        else:
+            # Lose: lose the amount
+            user.credits = getattr(user, 'credits', credits_starting) - amount
+            new_balance = user.credits
+            logging.info("%s gambled %.1f credits and LOST (balance: %.1f)",
+                         user, amount, new_balance)
+            return rp.Reply(rp.types.CREDITS_GAMBLE_LOST, amount=amount, credits=new_balance)
+
+
 def _calculate_tax_rate(credits: float) -> float:
     """Calculate the daily tax rate based on credit amount with linear ramp.
 

@@ -84,7 +84,7 @@ def init(config: dict, _db, _ch):
         "start", "stop", "users", "info", "help", "motd", "toggledebug", "togglevoting",
         "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "blacklist", "unblacklist",
         "s", "tripcode", "t", "purgebanned", "sendconfirm", "votebutton", "moderated",
-        "toggles", "togglet", "togglepotentiallyunwanted", "credit", "creditstats"
+        "toggles", "togglet", "togglepotentiallyunwanted", "credit", "creditstats", "gamblecredits"
     ]
     for c in cmds:  # maps /<c> to the function cmd_<c>
         c = c.lower()
@@ -904,6 +904,19 @@ def cmd_credit(ev: TMessage, arg):
         return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
 
     return send_answer(ev, core.send_credits(c_user, reply_msid, amount), True)
+
+
+@takesArgument()
+def cmd_gamblecredits(ev: TMessage, arg):
+    """Gamble credits with a 50% chance to double the amount."""
+    c_user = UserContainer(ev.from_user)
+
+    try:
+        amount = float(arg)
+    except ValueError:
+        return send_answer(ev, rp.Reply(rp.types.ERR_CREDITS_INVALID_AMOUNT), True)
+
+    return send_answer(ev, core.gamble_credits(c_user, amount), True)
 
 
 def relay(ev: TMessage):
