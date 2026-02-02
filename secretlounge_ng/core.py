@@ -196,8 +196,8 @@ def set_message_filter(filter_func):
 
     Example:
             def my_filter(user, is_media, signed, tripcode, message):
-                    # Block messages from users with low karma
-                    if user.karma < -10:
+                    # Block messages from users with low voting
+                    if user.voting < -10:
                             return False
                     # Block media from new users
                     if is_media and user.warnings > 0:
@@ -490,7 +490,7 @@ def get_info(user: User):
         "username": user.getFormattedName(),
         "rank_i": user.rank,
         "rank": RANKS.reverse[user.rank],
-        "karma": user.karma,
+        "voting": user.voting,
         "warnings": user.warnings,
         "warnExpiry": user.warnExpiry,
         "cooldown": user.cooldownUntil if user.isInCooldown() else None,
@@ -510,7 +510,7 @@ def get_info_mod(user: User, msid):
     user2 = db.getUser(id=cm.user_id)
     params = {
         "id": user2.getObfuscatedId(),
-        "karma": user2.karma,
+        "voting": user2.voting,
         "cooldown": user2.cooldownUntil if user2.isInCooldown() else None,
         "credits": getattr(user2, 'credits', credits_starting) if credits_enabled else None,
         "credits_enabled": credits_enabled,
@@ -618,11 +618,11 @@ def toggle_debug(user: User):
 
 
 @requireUser
-def toggle_karma(user: User):
+def toggle_voting(user: User):
     with db.modifyUser(id=user.id) as user:
-        user.hideKarma = not user.hideKarma
-        new = user.hideKarma
-    return rp.Reply(rp.types.BOOLEAN_CONFIG, description="Karma notifications", enabled=not new)
+        user.hideVoting = not user.hideVoting
+        new = user.hideVoting
+    return rp.Reply(rp.types.BOOLEAN_CONFIG, description="Voting notifications", enabled=not new)
 
 
 @requireUser
@@ -680,6 +680,20 @@ def toggle_tsigning(user: User):
         user.tsignenabled = not cur
         new = user.tsignenabled
     return rp.Reply(rp.types.BOOLEAN_CONFIG, description="Auto-tripcode messages (/t)", enabled=new)
+
+
+@requireUser
+def toggle_potentially_unwanted(user: User):
+    """Toggle whether the user receives messages flagged as potentially unwanted.
+
+    True = receive potentially unwanted messages.
+    False = don't receive potentially unwanted messages (default).
+    """
+    with db.modifyUser(id=user.id) as user:
+        cur = getattr(user, 'showPotentiallyUnwanted', False)
+        user.showPotentiallyUnwanted = not cur
+        new = user.showPotentiallyUnwanted
+    return rp.Reply(rp.types.BOOLEAN_CONFIG, description="Receive potentially unwanted messages", enabled=new)
 
 
 @requireUser
@@ -867,7 +881,7 @@ def send_credits(user: User, msid, amount: float):
         recipient_balance = user2.credits
 
     # Notify recipient
-    if not user2.hideKarma:
+    if not user2.hideVoting:
         _push_system_message(
             rp.Reply(rp.types.CREDITS_RECEIVED, amount=amount,
                      credits=recipient_balance),
@@ -1032,7 +1046,7 @@ def warn_user(user: User, msid, delete=False):
     if not cm.warned:
         with db.modifyUser(id=cm.user_id) as user2:
             d = user2.addWarning()
-            user2.karma -= KARMA_WARN_PENALTY
+            user2.voting -= VOTING_WARN_PENALTY
         _push_system_message(
             rp.Reply(rp.types.GIVEN_COOLDOWN, duration=d, deleted=delete),
             who=user2, reply_to=msid)
@@ -1224,7 +1238,7 @@ def unblacklist_user(user: User, oid2=None, username2=None):
 
 
 @requireUser
-def give_karma(user: User, msid):
+def give_vote(user: User, msid):
     cm = ch.getMessage(msid)
     if cm is None or cm.user_id is None:
         return rp.Reply(rp.types.ERR_NOT_IN_CACHE)
@@ -1246,35 +1260,38 @@ def give_karma(user: User, msid):
     cm.addUpvote(user)
     user2 = db.getUser(id=cm.user_id)
 
-    # Credit system: count upvotes for recipient
+    # Credit system: count upvotes for recipient (across all messages)
     recipient_credits = None
+    recipient_voting = None
     if credits_enabled:
         with db.modifyUser(id=cm.user_id) as user2:
-            user2.karma += KARMA_PLUS_ONE
+            user2.voting += VOTING_PLUS_ONE
             # Count upvotes - every X upvotes earns 1 credit (respects daily max)
-            total_upvotes = len(cm.upvoted)
-            if total_upvotes % credits_votes_per_credit == 0:
+            user2.creditsUpvoteCount = getattr(
+                user2, 'creditsUpvoteCount', 0) + 1
+            if user2.creditsUpvoteCount >= credits_votes_per_credit:
                 _check_and_reset_daily_earn(user2)
                 _try_add_credits(user2, 1.0)
+                user2.creditsUpvoteCount = 0
             recipient_credits = user2.credits
+            recipient_voting = user2.voting
     else:
         with db.modifyUser(id=cm.user_id) as user2:
-            user2.karma += KARMA_PLUS_ONE
+            user2.voting += VOTING_PLUS_ONE
+            recipient_voting = user2.voting
+            recipient_credits = getattr(user2, 'credits', credits_starting)
 
-    if not user2.hideKarma:
-        if credits_enabled and recipient_credits is not None:
-            _push_system_message(
-                rp.Reply(rp.types.KARMA_NOTIFICATION_WITH_CREDITS,
-                         credits=recipient_credits),
-                who=user2, reply_to=msid)
-        else:
-            _push_system_message(
-                rp.Reply(rp.types.KARMA_NOTIFICATION), who=user2, reply_to=msid)
-    return rp.Reply(rp.types.KARMA_THANK_YOU)
+    if not user2.hideVoting:
+        _push_system_message(
+            rp.Reply(rp.types.VOTING_NOTIFICATION,
+                     voting=recipient_voting,
+                     credits=recipient_credits),
+            who=user2, reply_to=msid)
+    return rp.Reply(rp.types.VOTING_THANK_YOU)
 
 
 @requireUser
-def take_karma(user: User, msid):
+def take_vote(user: User, msid):
     cm = ch.getMessage(msid)
     if cm is None or cm.user_id is None:
         return rp.Reply(rp.types.ERR_NOT_IN_CACHE)
@@ -1296,32 +1313,35 @@ def take_karma(user: User, msid):
     cm.addDownvote(user)
     user2 = db.getUser(id=cm.user_id)
 
-    # Credit system: count downvotes for recipient (lose credits)
+    # Credit system: count downvotes for recipient (lose credits, across all messages)
     recipient_credits = None
+    recipient_voting = None
     if credits_enabled:
         with db.modifyUser(id=cm.user_id) as user2:
-            user2.karma -= KARMA_PLUS_ONE
+            user2.voting -= VOTING_PLUS_ONE
             # Count downvotes - every X downvotes loses 1 credit
-            total_downvotes = len(cm.downvoted)
-            if total_downvotes % credits_votes_per_credit == 0:
+            user2.creditsDownvoteCount = getattr(
+                user2, 'creditsDownvoteCount', 0) + 1
+            if user2.creditsDownvoteCount >= credits_votes_per_credit:
                 user2.credits = getattr(user2, 'credits', credits_starting) - 1
+                user2.creditsDownvoteCount = 0
             recipient_credits = user2.credits
+            recipient_voting = user2.voting
         # Check if user went negative - apply timeout
         apply_credits_negative_timeout(cm.user_id)
     else:
         with db.modifyUser(id=cm.user_id) as user2:
-            user2.karma -= KARMA_PLUS_ONE
+            user2.voting -= VOTING_PLUS_ONE
+            recipient_voting = user2.voting
+            recipient_credits = getattr(user2, 'credits', credits_starting)
 
-    if not user2.hideKarma:
-        if credits_enabled and recipient_credits is not None:
-            _push_system_message(
-                rp.Reply(rp.types.KARMA_NEGATIVE_NOTIFICATION_WITH_CREDITS,
-                         credits=recipient_credits),
-                who=user2, reply_to=msid)
-        else:
-            _push_system_message(
-                rp.Reply(rp.types.KARMA_NEGATIVE_NOTIFICATION), who=user2, reply_to=msid)
-    return rp.Reply(rp.types.KARMA_TAKEN)
+    if not user2.hideVoting:
+        _push_system_message(
+            rp.Reply(rp.types.VOTING_NEGATIVE_NOTIFICATION,
+                     voting=recipient_voting,
+                     credits=recipient_credits),
+            who=user2, reply_to=msid)
+    return rp.Reply(rp.types.VOTING_TAKEN)
 
 
 @requireUser
@@ -1405,7 +1425,7 @@ def user_remove_vote(user: User, msid):
                 # Use fixed cooldown duration for user-voted removals
                 fixed_duration = timedelta(hours=user_remove_cooldown_hours)
                 d = user2.addWarning(fixed_duration=fixed_duration)
-                user2.karma -= KARMA_WARN_PENALTY
+                user2.voting -= VOTING_WARN_PENALTY
             _push_system_message(
                 rp.Reply(rp.types.GIVEN_COOLDOWN, duration=d, deleted=True),
                 who=user2, reply_to=msid)
@@ -1474,6 +1494,10 @@ def prepare_user_message(user: User, msg_score: int, *, is_media=False, signed=F
                         logging.info(
                             "Message from user %s requires confirmation by custom filter", user)
                         return rp.Reply(rp.types.ERR_QUESTION_FILTER)
+                    elif filter_result == FilterAction.POTENTIALLY_UNWANTED:
+                        logging.info(
+                            "Message from user %s marked as potentially unwanted", user)
+                        return rp.Reply(rp.types.POTENTIALLY_UNWANTED_FILTER)
                     # FilterAction.ALLOW falls through
             elif not filter_result:  # Old boolean style: False means block
                 logging.info(

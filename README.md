@@ -47,7 +47,7 @@ version - Get version & source code of this bot
 modhelp - Show commands available to moderators
 adminhelp - Show commands available to admins
 toggledebug - Toggle debug mode (sends back all messages to you)
-togglekarma - Toggle karma notifications
+togglevoting - Toggle voting notifications
 tripcode - Show or set the tripcode for your messages
 ```
 
@@ -55,7 +55,7 @@ tripcode - Show or set the tripcode for your messages
 
 You can implement custom filters to control which messages are forwarded to the chat. This is useful for:
 - Blocking spam or abusive content
-- Requiring minimum karma/trust before allowing certain message types
+- Requiring minimum voting/trust before allowing certain message types
 - Time-based restrictions
 - Rate limiting
 - Any custom logic you can implement in Python
@@ -70,8 +70,8 @@ You can implement custom filters to control which messages are forwarded to the 
 2. **Edit your filter logic**:
    ```python
    def message_filter(user, is_media=False, signed=False, tripcode=False):
-       # Block users with very low karma
-       if user.karma < -20:
+       # Block users with very low voting score
+       if user.voting < -20:
            return False
        
        # Block media from users with warnings
@@ -94,7 +94,7 @@ You can implement custom filters to control which messages are forwarded to the 
 Your filter function receives a `user` object with these properties:
 - `user.id` - Telegram user ID
 - `user.username` - Username
-- `user.karma` - Karma score
+- `user.voting` - Voting score
 - `user.warnings` - Number of warnings
 - `user.rank` - User rank (0=regular, 10=mod, 100=admin)
 - `user.joined` - DateTime when user joined

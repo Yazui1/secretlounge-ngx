@@ -9,7 +9,7 @@ from .globals import *
 
 class CachedMessage():
     __slots__ = ('user_id', 'time', 'warned', 'upvoted', 'downvoted',
-                 'remove_votes', 'needs_vote_button')
+                 'remove_votes', 'needs_vote_button', 'is_potentially_unwanted')
     user_id: Optional[int]
     time: datetime
     warned: bool
@@ -17,16 +17,19 @@ class CachedMessage():
     downvoted: Set[int]
     remove_votes: Set[int]
     needs_vote_button: bool
+    is_potentially_unwanted: bool
 
-    def __init__(self, user_id=None, needs_vote_button=False):
+    def __init__(self, user_id=None, needs_vote_button=False, is_potentially_unwanted=False):
         self.user_id = user_id  # who has sent this message
         self.time = datetime.now()  # when was this message created?
         self.warned = False  # was the user warned for this message?
-        self.upvoted = set()  # user ids that have given this message karma
-        self.downvoted = set()  # user ids that have taken karma from this message
+        self.upvoted = set()  # user ids that have upvoted this message
+        self.downvoted = set()  # user ids that have downvoted this message
         self.remove_votes = set()  # user ids that have voted to remove this message
         # should this message have a delete vote button?
         self.needs_vote_button = needs_vote_button
+        # is this message flagged as potentially unwanted?
+        self.is_potentially_unwanted = is_potentially_unwanted
 
     def isExpired(self):
         return datetime.now() >= self.time + timedelta(hours=MESSAGE_EXPIRE_HOURS)

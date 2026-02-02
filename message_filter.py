@@ -1,6 +1,4 @@
 from secretlounge_ng.telegram import TMessage
-import tensorflow as tf
-import numpy as np
 from PIL import Image
 import io
 import logging
@@ -12,11 +10,13 @@ class FilterAction(Enum):
     ALLOW = "allow"      # Allow the message through normally
     QUESTION = "question"  # Ask user for confirmation before sending
     BLOCK = "block"      # Block the message completely
+    # Only send to users who have potentially unwanted messages enabled
+    POTENTIALLY_UNWANTED = "potentially_unwanted"
 
 
 # Load the TensorFlow model once at module level
 try:
-    model = tf.keras.models.load_model("anime_real_model2.keras")
+    # model = tf.keras.models.load_model("anime_real_model2.keras")
     logging.info("Successfully loaded model")
 except Exception as e:
     model = None
@@ -86,7 +86,7 @@ def message_filter(user, is_media=False, signed=False, tripcode=False, message: 
     Filter function to control which messages are forwarded.
 
     Args:
-        user: User object with properties like karma, warnings, etc.
+        user: User object with properties like voting, warnings, etc.
         is_media: True if message contains media (photos, videos, documents, etc.)
         signed: True if message is signed with /sign
         tripcode: True if message uses a tripcode
@@ -125,6 +125,11 @@ def message_filter(user, is_media=False, signed=False, tripcode=False, message: 
 
     if message and (message.content_type != "text"):
         return FilterAction.QUESTION
+
+    if message and message.content_type == "text":
+        text = message.text.lower()
+        if "incognotebot" in text or "letsaskbot" in text:
+            return FilterAction.POTENTIALLY_UNWANTED
 
     # Allow all other messages
     return FilterAction.ALLOW

@@ -81,9 +81,9 @@ COOLDOWN_TIME_LINEAR_M = 4320  # continues 7d, 10d, 13d, 16d, ... (linear)
 COOLDOWN_TIME_LINEAR_B = 10080
 WARN_EXPIRE_HOURS = 7 * 24
 
-# Karma related
-KARMA_PLUS_ONE = 1
-KARMA_WARN_PENALTY = 10
+# Voting related
+VOTING_PLUS_ONE = 1
+VOTING_WARN_PENALTY = 10
 
 # Spam limits
 SPAM_LIMIT = 5

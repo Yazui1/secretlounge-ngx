@@ -108,8 +108,8 @@ def ban_user(db, id, reason):
             "lastActive": nodate,
             "blacklistReason": reason,
             "warnings": 0,
-            "karma": 0,
-            "hideKarma": 0,
+            "voting": 0,
+            "hideVoting": 0,
             "debugEnabled": 0,
         }
         sql = "INSERT INTO users (" + (", ".join(u.keys())) + \
@@ -174,7 +174,7 @@ def sync(d):
 
 def find_user(db, term):
     attrs = ("username", "realname", "rank", "joined", "left", "lastActive",
-             "cooldownUntil", "blacklistReason", "warnings", "warnExpiry", "karma")
+             "cooldownUntil", "blacklistReason", "warnings", "warnExpiry", "voting")
     sql = "SELECT id, " + ",".join(attrs) + " FROM users WHERE"
     sql += " username LIKE ? OR realname LIKE ?"
     args = ["%" + term + "%", "%" + term + "%"]

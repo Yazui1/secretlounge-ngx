@@ -81,10 +81,10 @@ def init(config: dict, _db, _ch):
         types += ["document"]
 
     cmds = [
-        "start", "stop", "users", "info", "help", "motd", "toggledebug", "togglekarma",
+        "start", "stop", "users", "info", "help", "motd", "toggledebug", "togglevoting",
         "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "blacklist", "unblacklist",
         "s", "tripcode", "t", "purgebanned", "sendconfirm", "votebutton", "moderated",
-        "toggles", "togglet", "credit", "creditstats"
+        "toggles", "togglet", "togglepotentiallyunwanted", "credit", "creditstats"
     ]
     for c in cmds:  # maps /<c> to the function cmd_<c>
         c = c.lower()
@@ -487,7 +487,7 @@ def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None, reply_m
         if ev.type == rp.types.CUSTOM:
             kwargs2["link_preview_options"] = telebot.types.LinkPreviewOptions(
                 is_disabled=True)
-        elif ev.type == rp.types.KARMA_NOTIFICATION:
+        elif ev.type == rp.types.VOTING_NOTIFICATION:
             kwargs2["message_effect_id"] = "5107584321108051014"  # thumbs up
         kwargs2["parse_mode"] = "HTML"
         return bot.send_message(chat_id, rp.formatForTelegram(ev), **kwargs2)
@@ -518,20 +518,40 @@ def send_to_single(ev, msid, user, *, reply_msid=None, force_caption=None):
     # who we're sending to (use immediately where needed)
     user_id = user.id
 
-    # Check if message needs a vote button
+    # Check if message needs a vote button or potentially unwanted button
     reply_markup = None
     if msid is not None:
         cm = ch.getMessage(msid)
-        if cm is not None and cm.needs_vote_button:
-            # Check if user is in cooldown - don't show vote button to users in cooldown
-            try:
-                recipient_user = db.getUser(id=user_id)
-                # Don't show vote button to users in cooldown or who disabled it
-                if recipient_user.isInCooldown() or not getattr(recipient_user, 'votebutton', True):
-                    # User is in cooldown or has disabled vote buttons; don't add vote button
-                    pass
-                else:
-                    # Create inline keyboard with delete vote button
+        if cm is not None:
+            # Check for potentially unwanted message button
+            if cm.is_potentially_unwanted:
+                markup = telebot.types.InlineKeyboardMarkup()
+                button = telebot.types.InlineKeyboardButton(
+                    text="Potentially unwanted. Stop receiving such messages?",
+                    callback_data=f"hide_potentially_unwanted:{user_id}"
+                )
+                markup.add(button)
+                reply_markup = markup
+            # Check for vote button
+            elif cm.needs_vote_button:
+                # Check if user is in cooldown - don't show vote button to users in cooldown
+                try:
+                    recipient_user = db.getUser(id=user_id)
+                    # Don't show vote button to users in cooldown or who disabled it
+                    if recipient_user.isInCooldown() or not getattr(recipient_user, 'votebutton', True):
+                        # User is in cooldown or has disabled vote buttons; don't add vote button
+                        pass
+                    else:
+                        # Create inline keyboard with delete vote button
+                        markup = telebot.types.InlineKeyboardMarkup()
+                        button = telebot.types.InlineKeyboardButton(
+                            text="Is this against the rules? Delete",
+                            callback_data=f"vote_delete:{msid}"
+                        )
+                        markup.add(button)
+                        reply_markup = markup
+                except KeyError:
+                    # User not in database, treat as not in cooldown
                     markup = telebot.types.InlineKeyboardMarkup()
                     button = telebot.types.InlineKeyboardButton(
                         text="Is this against the rules? Delete",
@@ -539,15 +559,6 @@ def send_to_single(ev, msid, user, *, reply_msid=None, force_caption=None):
                     )
                     markup.add(button)
                     reply_markup = markup
-            except KeyError:
-                # User not in database, treat as not in cooldown
-                markup = telebot.types.InlineKeyboardMarkup()
-                button = telebot.types.InlineKeyboardButton(
-                    text="Is this against the rules? Delete",
-                    callback_data=f"vote_delete:{msid}"
-                )
-                markup.add(button)
-                reply_markup = markup
 
     def f():
         while True:
@@ -607,7 +618,7 @@ def check_telegram_exc(e, user_id):
 ####
 
 # Event receiver: handles all things the core decides to do "on its own":
-# e.g. karma notifications, deletion of messages, signed messages
+# e.g. voting notifications, deletion of messages, signed messages
 # This does *not* include direct replies to commands or relaying of messages.
 
 
@@ -736,11 +747,12 @@ def cmd_tripcode(ev, arg):
 
 
 cmd_toggledebug = wrap_core(core.toggle_debug)
-cmd_togglekarma = wrap_core(core.toggle_karma)
+cmd_togglevoting = wrap_core(core.toggle_voting)
 cmd_sendconfirm = wrap_core(core.toggle_sendconfirm)
 cmd_votebutton = wrap_core(core.toggle_votebutton)
 cmd_toggles = wrap_core(core.toggle_signing)
 cmd_togglet = wrap_core(core.toggle_tsigning)
+cmd_togglepotentiallyunwanted = wrap_core(core.toggle_potentially_unwanted)
 
 
 @takesArgument()
@@ -895,7 +907,7 @@ def cmd_credit(ev: TMessage, arg):
 
 
 def relay(ev: TMessage):
-    # handle commands and karma giving
+    # handle commands and voting
     if ev.content_type == "text":
         if ev.text.startswith("/"):
             c, _ = split_command(ev.text)
@@ -1063,6 +1075,61 @@ def relay_inner(ev: TMessage, *, caption_text=None, signed=False, tripcode=False
             put_into_queue(user, None, f)
             return
 
+        # Check if it's a POTENTIALLY_UNWANTED filter reply
+        if isinstance(msid, rp.Reply) and msid.type == rp.types.POTENTIALLY_UNWANTED_FILTER:
+            user = db.getUser(id=ev.from_user.id)
+
+            # Assign message ID with potentially unwanted flag
+            msid2 = ch.assignMessageId(CachedMessage(
+                user.id, needs_vote_button=False, is_potentially_unwanted=True))
+
+            # Apply text formatting
+            ev_tosend = ev
+            force_caption = None
+            if is_forward(ev):
+                pass  # leave message alone
+            elif ev.content_type == "text" or ev.caption is not None or caption_text is not None:
+                fmt = FormattedMessageBuilder(
+                    caption_text, ev.caption, ev.text)
+                formatter_replace_links(ev, fmt)
+                formatter_network_links(fmt)
+                if signed:
+                    formatter_signed_message(user, fmt)
+                elif tripcode:
+                    formatter_tripcoded_message(user, fmt)
+                fmt = fmt.build()
+                # either replace whole message or just the caption
+                if ev.content_type == "text":
+                    ev_tosend = fmt or ev_tosend
+                else:
+                    force_caption = fmt
+
+            # find out which message is being replied to
+            reply_msid = None
+            if ev.reply_to_message is not None:
+                reply_msid = ch.findMapping(
+                    ev.from_user.id, ev.reply_to_message.message_id)
+                if reply_msid is None:
+                    logging.warning(
+                        "Message replied to not found in cache")
+
+            # relay message only to users who have showPotentiallyUnwanted enabled
+            logging.debug(
+                "relay() potentially unwanted: msid=%d reply_msid=%r", msid2, reply_msid)
+            for user2 in db.iterateUsers():
+                if not user2.isJoined():
+                    continue
+                # Skip users who don't want potentially unwanted messages
+                if not getattr(user2, 'showPotentiallyUnwanted', False):
+                    continue
+                if user2 == user and not user.debugEnabled:
+                    ch.saveMapping(user2.id, msid2, ev.message_id)
+                    continue
+
+                send_to_single(ev_tosend, msid2, user2,
+                               reply_msid=reply_msid, force_caption=force_caption)
+            return
+
         # don't relay message, instead reply
         return send_answer(ev, msid, reply_to=True)
 
@@ -1154,7 +1221,7 @@ def message_reaction(ev: telebot.types.MessageReactionUpdated):
         reply_msid = ch.findMapping(ev.chat.id, ev.message_id)
         if reply_msid is None:
             return send_answer(fake_ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
-        return send_answer(fake_ev, core.give_karma(c_user, reply_msid), True)
+        return send_answer(fake_ev, core.give_vote(c_user, reply_msid), True)
 
     # Check for new downvote reaction
     if not any(match_downvote(r) for r in ev.old_reaction) and any(match_downvote(r) for r in ev.new_reaction):
@@ -1163,7 +1230,7 @@ def message_reaction(ev: telebot.types.MessageReactionUpdated):
         reply_msid = ch.findMapping(ev.chat.id, ev.message_id)
         if reply_msid is None:
             return send_answer(fake_ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
-        return send_answer(fake_ev, core.take_karma(c_user, reply_msid), True)
+        return send_answer(fake_ev, core.take_vote(c_user, reply_msid), True)
 
 
 def handle_callback_query(call: telebot.types.CallbackQuery):
@@ -1361,6 +1428,50 @@ def handle_callback_query(call: telebot.types.CallbackQuery):
 
         except Exception as e:
             logging.error("Error handling send_anyways callback: %s", e)
+            bot.answer_callback_query(call.id, text="Error processing request")
+
+    elif call.data.startswith("hide_potentially_unwanted:"):
+        try:
+            # Extract user_id from callback data
+            parts = call.data.split(":")
+            if len(parts) != 2:
+                bot.answer_callback_query(
+                    call.id, text="Invalid callback data")
+                return
+
+            _, target_user_id_str = parts
+            target_user_id = int(target_user_id_str)
+
+            # Verify the user clicking the button is the intended recipient
+            if call.from_user.id != target_user_id:
+                bot.answer_callback_query(
+                    call.id, text="This button is not for you")
+                return
+
+            # Toggle off potentially unwanted messages for this user
+            try:
+                with db.modifyUser(id=target_user_id) as user:
+                    user.showPotentiallyUnwanted = False
+                bot.answer_callback_query(
+                    call.id, text="You will no longer receive potentially unwanted messages. Use /togglepotentiallyunwanted to re-enable.")
+            except KeyError:
+                bot.answer_callback_query(
+                    call.id, text="User not found")
+                return
+
+            # Remove the button from the message
+            try:
+                bot.edit_message_reply_markup(
+                    call.message.chat.id,
+                    call.message.message_id,
+                    reply_markup=None
+                )
+            except Exception as e:
+                logging.error("Error removing button: %s", e)
+
+        except Exception as e:
+            logging.error(
+                "Error handling hide_potentially_unwanted callback: %s", e)
             bot.answer_callback_query(call.id, text="Error processing request")
 
     else:

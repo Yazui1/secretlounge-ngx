@@ -47,12 +47,10 @@ types = NumericEnum([
     "PROMOTED_ADMIN",
     "COOLDOWN_REMOVED",
     "UNBLACKLISTED",
-    "KARMA_THANK_YOU",
-    "KARMA_NOTIFICATION",
-    "KARMA_NOTIFICATION_WITH_CREDITS",
-    "KARMA_TAKEN",
-    "KARMA_NEGATIVE_NOTIFICATION",
-    "KARMA_NEGATIVE_NOTIFICATION_WITH_CREDITS",
+    "VOTING_THANK_YOU",
+    "VOTING_NOTIFICATION",
+    "VOTING_TAKEN",
+    "VOTING_NEGATIVE_NOTIFICATION",
     "TRIPCODE_INFO",
     "TRIPCODE_SET",
 
@@ -90,6 +88,7 @@ types = NumericEnum([
     "ERR_POLLS_UNSUPPORTED",
     "ERR_BLOCKED_BY_FILTER",
     "ERR_QUESTION_FILTER",
+    "POTENTIALLY_UNWANTED_FILTER",
 
     "USER_INFO",
     "USER_INFO_MOD",
@@ -145,20 +144,14 @@ format_strs = {
         types.PROMOTED_ADMIN: em("You've been promoted to admin."),
         types.COOLDOWN_REMOVED: em("Your cooldown has been removed by a moderator. You can chat again!"),
         types.UNBLACKLISTED: em("You've been removed from the blacklist. Welcome back!"),
-        types.KARMA_THANK_YOU: em("You just gave this user some sweet karma, awesome!"),
-        types.KARMA_NOTIFICATION:
-        em("You've just been given sweet karma! (check /info to see your karma" +
-           " or /toggleKarma to turn these notifications off)"),
-        types.KARMA_NOTIFICATION_WITH_CREDITS:
-        em("You've just been given sweet karma! Your credits: {credits:.1f} " +
-           "(check /info to see your karma or /toggleKarma to turn these notifications off)"),
-        types.KARMA_TAKEN: em("You've taken karma from this user."),
-        types.KARMA_NEGATIVE_NOTIFICATION:
-        em("Someone took karma from you. (check /info to see your karma" +
-           " or /toggleKarma to turn these notifications off)"),
-        types.KARMA_NEGATIVE_NOTIFICATION_WITH_CREDITS:
-        em("Someone took karma from you. Your credits: {credits:.1f} " +
-           "(check /info to see your karma or /toggleKarma to turn these notifications off)"),
+        types.VOTING_THANK_YOU: em("You just upvoted this user's message, awesome!"),
+        types.VOTING_NOTIFICATION:
+        em("Someone voted on your message! Your voting: {voting}, credits: {credits:.1f}. " +
+           "Use /info for details or /togglevoting to turn these notifications off."),
+        types.VOTING_TAKEN: em("You've downvoted this user's message."),
+        types.VOTING_NEGATIVE_NOTIFICATION:
+        em("Someone downvoted your message. Your voting: {voting}, credits: {credits:.1f}. " +
+           "Use /info for details or /togglevoting to turn these notifications off."),
         types.TRIPCODE_INFO: lambda tripcode, **_:
         "<b>tripcode</b>: " +
         ("<code>{tripcode!x}</code>" if tripcode is not None else "unset"),
@@ -207,7 +200,7 @@ format_strs = {
 
         types.USER_INFO: lambda warnings, cooldown, credits_enabled, credits, **_:
         "<b>id</b>: {id}, <b>username</b>: {username!x}, <b>rank</b>: {rank_i} ({rank})\n" +
-        "<b>karma</b>: {karma}" +
+        "<b>voting</b>: {voting}" +
         (", <b>credits</b>: %.1f" % credits if credits_enabled and credits is not None else "") + "\n" +
         "<b>warnings</b>: {warnings} " + smiley(warnings) +
         (" (one warning will be removed on {warnExpiry!t})" if warnings > 0 else "") + ", " +
@@ -215,7 +208,7 @@ format_strs = {
         (cooldown and "yes, until {cooldown!t}" or "no"),
         types.USER_INFO_MOD: lambda cooldown, credits=None, credits_enabled=False, **_:
         "<b>id</b>: {id}, <b>username</b>: anonymous, <b>rank</b>: n/a, " +
-        "<b>karma</b>: {karma}" +
+        "<b>voting</b>: {voting}" +
         (", <b>credits</b>: %.1f" % credits if credits_enabled and credits is not None else "") +
         "\n<b>cooldown</b>: " +
         (cooldown and "yes, until {cooldown!t}" or "no"),
@@ -241,7 +234,7 @@ format_strs = {
         "  /s - Sign your message with your username\n"
         "  /tripcode - Set your tripcode for pseudo-anonymous identification\n"
         "  /t - Sign your message with your tripcode\n"
-        "  React to a message with 👍, ❤️ or 👎 - Give or take karma from the user\n" +
+        "  React to a message with 👍, ❤️ or 👎 - Vote on the user's message\n" +
         ("\n"
          "<b>Credit System:</b> (start with %d credits)\n"
          "  /creditstats - View credit economy statistics\n"
@@ -262,11 +255,12 @@ format_strs = {
         "\n"
         "<b>Settings / Toggles:</b>\n"
         "  /toggledebug - Toggle debug messages you receive from the bot\n"
-        "  /togglekarma - Toggle karma notifications\n"
+        "  /togglevoting - Toggle voting notifications\n"
         "  /sendconfirm - Toggle confirmation prompts for flagged messages\n"
         "  /votebutton - Toggle vote/delete buttons on received messages\n"
         "  /toggles - Toggle auto-signing for all your messages\n"
         "  /togglet - Toggle auto-tripcode for all your messages\n"
+        "  /togglepotentiallyunwanted - Toggle receiving potentially unwanted messages\n"
         "\n"
         "<b>Moderation:</b>\n"
         "  /warn - Warn the user (cooldown)\n"

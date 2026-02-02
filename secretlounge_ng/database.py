@@ -23,10 +23,10 @@ class SystemConfig():
 
 USER_PROPS = (
     "id", "username", "realname", "rank", "joined", "left", "lastActive",
-    "cooldownUntil", "blacklistReason", "warnings", "warnExpiry", "karma",
-    "hideKarma", "debugEnabled", "tripcode", "sendconfirm", "votebutton",
-    "signenabled", "tsignenabled", "credits", "creditsMessageCount", "creditsMediaCount",
-    "creditsLastTax", "creditsEarnedToday", "creditsLastEarnReset"
+    "cooldownUntil", "blacklistReason", "warnings", "warnExpiry", "voting",
+    "hideVoting", "debugEnabled", "tripcode", "sendconfirm", "votebutton",
+    "signenabled", "tsignenabled", "showPotentiallyUnwanted", "credits", "creditsMessageCount", "creditsMediaCount",
+    "creditsUpvoteCount", "creditsDownvoteCount", "creditsLastTax", "creditsEarnedToday", "creditsLastEarnReset"
 )
 
 ID_ALPHA = "0123456789abcdefghijklmnopqrstuv"
@@ -47,17 +47,20 @@ class User():
     blacklistReason: Optional[str]
     warnings: int
     warnExpiry: Optional[datetime]
-    karma: int
-    hideKarma: bool
+    voting: int
+    hideVoting: bool
     debugEnabled: bool
     tripcode: Optional[str]
     sendconfirm: bool
     votebutton: bool
     signenabled: bool
     tsignenabled: bool
+    showPotentiallyUnwanted: bool
     credits: float
     creditsMessageCount: int
     creditsMediaCount: int
+    creditsUpvoteCount: int
+    creditsDownvoteCount: int
     creditsLastTax: Optional[datetime]
     creditsEarnedToday: float
     creditsLastEarnReset: Optional[datetime]
@@ -84,8 +87,8 @@ class User():
         self.joined = datetime.now()
         self.lastActive = self.joined
         self.warnings = 0
-        self.karma = 0
-        self.hideKarma = False
+        self.voting = 0
+        self.hideVoting = False
         self.debugEnabled = False
 
         # whether to ask for confirmation when custom filter returns QUESTION
@@ -104,10 +107,17 @@ class User():
         # True = auto-tripcode enabled, False = disabled (default)
         self.tsignenabled = False
 
+        # whether to receive messages flagged as potentially unwanted
+        # False = don't receive potentially unwanted messages (default), True = receive them
+        self.showPotentiallyUnwanted = False
+
         # Credit system
         self.credits = 20.0  # Starting credits (configurable via config)
         self.creditsMessageCount = 0  # Counter for messages towards earning credits
         self.creditsMediaCount = 0  # Counter for media towards earning credits
+        self.creditsUpvoteCount = 0  # Counter for upvotes received towards earning credits
+        # Counter for downvotes received towards losing credits
+        self.creditsDownvoteCount = 0
         self.creditsLastTax = datetime.now()  # Last time daily tax was applied
         self.creditsEarnedToday = 0.0  # Credits earned today (for daily cap)
         self.creditsLastEarnReset = datetime.now()  # Last time daily earn was reset
@@ -290,7 +300,7 @@ class JSONDatabase(Database):
         if d is None:
             return None
         props = ["id", "username", "realname", "rank", "blacklistReason",
-                 "warnings", "karma", "hideKarma", "debugEnabled"]
+                 "warnings", "voting", "hideVoting", "debugEnabled"]
         # sendconfirm, votebutton, and credit fields are optional in older DB dumps
         props_d = {
             "tripcode": None,
@@ -298,9 +308,12 @@ class JSONDatabase(Database):
             "votebutton": True,
             "signenabled": False,
             "tsignenabled": False,
+            "showPotentiallyUnwanted": True,
             "credits": 100.0,
             "creditsMessageCount": 0,
             "creditsMediaCount": 0,
+            "creditsUpvoteCount": 0,
+            "creditsDownvoteCount": 0,
             "creditsEarnedToday": 0.0,
         }
         dateprops = ["joined", "left", "lastActive",
@@ -443,8 +456,8 @@ CREATE TABLE IF NOT EXISTS `users` (
 	`blacklistReason` TEXT,
 	`warnings` INTEGER NOT NULL,
 	`warnExpiry` TIMESTAMP,
-	`karma` INTEGER NOT NULL,
-	`hideKarma` TINYINT NOT NULL,
+	`voting` INTEGER NOT NULL,
+	`hideVoting` TINYINT NOT NULL,
 	`debugEnabled` TINYINT NOT NULL,
 	`tripcode` TEXT,
 	`sendconfirm` TINYINT NOT NULL DEFAULT 1,
@@ -454,6 +467,13 @@ CREATE TABLE IF NOT EXISTS `users` (
 	PRIMARY KEY (`id`)
 );
 			""".strip())
+            # migration: karma -> voting (rename columns)
+            if row_exists("users", "karma") and not row_exists("users", "voting"):
+                self.db.execute(
+                    "ALTER TABLE `users` RENAME COLUMN `karma` TO `voting`")
+            if row_exists("users", "hideKarma") and not row_exists("users", "hideVoting"):
+                self.db.execute(
+                    "ALTER TABLE `users` RENAME COLUMN `hideKarma` TO `hideVoting`")
             # migration
             if not row_exists("users", "tripcode"):
                 self.db.execute("ALTER TABLE `users` ADD `tripcode` TEXT")
@@ -478,6 +498,11 @@ CREATE TABLE IF NOT EXISTS `users` (
                 self.db.execute(
                     "ALTER TABLE `users` ADD `tsignenabled` TINYINT NOT NULL DEFAULT 0")
 
+            # migration for showPotentiallyUnwanted flag (defaults to enabled = 1)
+            if not row_exists("users", "showPotentiallyUnwanted"):
+                self.db.execute(
+                    "ALTER TABLE `users` ADD `showPotentiallyUnwanted` TINYINT NOT NULL DEFAULT 1")
+
             # migration for credit system
             if not row_exists("users", "credits"):
                 self.db.execute(
@@ -488,6 +513,12 @@ CREATE TABLE IF NOT EXISTS `users` (
             if not row_exists("users", "creditsMediaCount"):
                 self.db.execute(
                     "ALTER TABLE `users` ADD `creditsMediaCount` INTEGER NOT NULL DEFAULT 0")
+            if not row_exists("users", "creditsUpvoteCount"):
+                self.db.execute(
+                    "ALTER TABLE `users` ADD `creditsUpvoteCount` INTEGER NOT NULL DEFAULT 0")
+            if not row_exists("users", "creditsDownvoteCount"):
+                self.db.execute(
+                    "ALTER TABLE `users` ADD `creditsDownvoteCount` INTEGER NOT NULL DEFAULT 0")
             if not row_exists("users", "creditsLastTax"):
                 self.db.execute(
                     "ALTER TABLE `users` ADD `creditsLastTax` TIMESTAMP")
