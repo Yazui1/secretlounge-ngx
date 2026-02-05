@@ -889,6 +889,7 @@ def send_credits(user: User, msid, amount: float):
     # Deduct from sender
     with db.modifyUser(id=user.id) as user:
         user.credits = getattr(user, 'credits', credits_starting) - amount
+        _subtract_from_daily_earn(user, amount)
         new_balance = user.credits
 
     # Add to recipient
@@ -938,6 +939,7 @@ def gamble_credits(user: User, amount: float):
         else:
             # Lose: lose the amount
             user.credits = getattr(user, 'credits', credits_starting) - amount
+            _subtract_from_daily_earn(user, amount)
             new_balance = user.credits
             logging.info("%s gambled %.1f credits and LOST (balance: %.1f)",
                          user, amount, new_balance)
@@ -998,6 +1000,18 @@ def _try_add_credits(user, amount: float) -> float:
     return actual_amount
 
 
+def _subtract_from_daily_earn(user, amount: float):
+    """Subtract from daily earned credits when user loses credits.
+    
+    This allows users to earn more credits after losing some, making
+    credits_daily_earn_max a net limit rather than gross limit.
+    """
+    _check_and_reset_daily_earn(user)
+    current_earned = getattr(user, 'creditsEarnedToday', 0.0)
+    # Allow going negative so losses can offset future earnings
+    user.creditsEarnedToday = current_earned - amount
+
+
 def add_credits_for_message(user_id: int, is_media: bool):
     """Add credits for sending a message. Called from prepare_user_message."""
     if not credits_enabled:
@@ -1026,6 +1040,7 @@ def apply_credits_deletion_tax(user_id: int):
         current_credits = getattr(user, 'credits', credits_starting)
         tax = current_credits * (credits_deletion_tax_percent / 100.0)
         user.credits = current_credits - tax
+        _subtract_from_daily_earn(user, tax)
         logging.info("Applied deletion tax of %.1f to user %s (new balance: %.1f)",
                      tax, user.getObfuscatedId(), user.credits)
 
@@ -1308,6 +1323,7 @@ def give_vote(user: User, msid):
         with db.modifyUser(id=user.id) as user:
             user.credits = getattr(
                 user, 'credits', credits_starting) - credits_vote_cost
+            _subtract_from_daily_earn(user, credits_vote_cost)
 
     cm.addUpvote(user)
     user2 = db.getUser(id=cm.user_id)
@@ -1361,6 +1377,7 @@ def take_vote(user: User, msid):
         with db.modifyUser(id=user.id) as user:
             user.credits = getattr(
                 user, 'credits', credits_starting) - credits_vote_cost
+            _subtract_from_daily_earn(user, credits_vote_cost)
 
     cm.addDownvote(user)
     user2 = db.getUser(id=cm.user_id)
@@ -1376,6 +1393,7 @@ def take_vote(user: User, msid):
                 user2, 'creditsDownvoteCount', 0) + 1
             if user2.creditsDownvoteCount >= credits_votes_per_credit:
                 user2.credits = getattr(user2, 'credits', credits_starting) - 1
+                _subtract_from_daily_earn(user2, 1.0)
                 user2.creditsDownvoteCount = 0
             recipient_credits = user2.credits
             recipient_voting = user2.voting

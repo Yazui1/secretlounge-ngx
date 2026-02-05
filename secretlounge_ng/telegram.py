@@ -84,7 +84,7 @@ def init(config: dict, _db, _ch):
         "start", "stop", "users", "info", "help", "motd", "toggledebug", "togglevoting",
         "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "blacklist", "unblacklist",
         "s", "tripcode", "t", "purgebanned", "sendconfirm", "votebutton", "moderated",
-        "toggles", "togglet", "togglepotentiallyunwanted", "credit", "creditstats", "gamblecredits"
+        "toggles", "togglet", "togglepotentiallyunwanted", "credit", "creditstats", "gamble"
     ]
     for c in cmds:  # maps /<c> to the function cmd_<c>
         c = c.lower()
@@ -907,7 +907,7 @@ def cmd_credit(ev: TMessage, arg):
 
 
 @takesArgument()
-def cmd_gamblecredits(ev: TMessage, arg):
+def cmd_gamble(ev: TMessage, arg):
     """Gamble credits with a 50% chance to double the amount."""
     c_user = UserContainer(ev.from_user)
 

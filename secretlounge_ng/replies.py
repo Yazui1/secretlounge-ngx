@@ -248,7 +248,7 @@ format_strs = {
         ("\n"
          "<b>Credit System:</b> (start with %d credits)\n"
          "  /creditstats - View credit economy statistics\n"
-         "  /gamblecredits <amount> - Gamble credits (50% chance to double)\n"
+         "  /gamble <amount> - Gamble X amount of credits (50% chance to double)\n"
          "  /credit X - Send X credits to a user (reply to their message)\n"
          "  /info - View your current credit balance\n"
          "  <b>Earning:</b> %d messages = 1 credit, %d media = 1 credit (max %s/day)\n"
