@@ -1029,6 +1029,9 @@ def relay_inner(ev: TMessage, *, caption_text=None, signed=False, tripcode=False
                         logging.warning(
                             "Message replied to not found in cache")
 
+                # Credit system: earn credits for sending messages
+                core.add_credits_for_message(user.id, is_media)
+
                 # relay message to all other users
                 logging.debug(
                     "relay() bypass confirmation: msid=%d reply_msid=%r", msid2, reply_msid)
@@ -1427,6 +1430,9 @@ def handle_callback_query(call: telebot.types.CallbackQuery):
                     ev.from_user.id, ev.reply_to_message.message_id)
                 if reply_msid is None:
                     logging.warning("Message replied to not found in cache")
+
+            # Credit system: earn credits for sending messages
+            core.add_credits_for_message(user.id, is_media)
 
             # relay message to all other users
             logging.debug(
